@@ -60,6 +60,22 @@ spec:
         property: message
 ```
 
+## helm チャートと導入されるコンポーネント
+
+chart は [external-secrets](https://artifacthub.io/packages/helm/external-secrets-operator/external-secrets)
+(リポジトリ: `https://charts.external-secrets.io`)。このラボでは `scripts/06-eso.sh` が
+spoke-dev へ導入する。ArgoCD 本体と同じく「1 つの chart で controller 一式が入る」構成で、
+中身は 3 つの Deployment に分かれている:
+
+| コンポーネント | 役割 |
+|---|---|
+| external-secrets(core controller) | 本体。SecretStore / ExternalSecret を reconcile し、外部ストアから値を取って K8s Secret を生成・更新する |
+| external-secrets-webhook | admission/conversion webhook。ExternalSecret / SecretStore の**検証**と、CRD バージョン間の**変換**を担う |
+| external-secrets-cert-controller | webhook 用の TLS 証明書を生成し、CA bundle を CRD と ValidatingWebhookConfiguration に注入し続ける(webhook は TLS 必須のため) |
+
+なお ArgoCD 本体の chart はバージョンを pin している(`hub/argocd/kustomization.yaml` の 9.7.0)のに対し、
+ESO は pin せず最新を入れる割り切り。本番では ESO も pin + Renovate 等での計画的更新が定石。
+
 ## 運用上の性質
 
 - **ローテーションが「値の差し替えだけ」になる**: 外部ストアの値を更新すれば、
