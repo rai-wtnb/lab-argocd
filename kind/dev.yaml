@@ -1,0 +1,10 @@
+# spoke-dev クラスタ。demo-app (podinfo) の NodePort(30898)をホストの 9898 に公開する
+# (マーカー同期後に http://localhost:9898 で UI が見える)。
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30898
+        hostPort: 9898
+        protocol: TCP

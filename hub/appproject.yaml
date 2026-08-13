@@ -1,0 +1,23 @@
+# チーム区画。
+# 「このプロジェクトの Application はどのクラスタ×namespace にしか同期できないか」の許可リスト。
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  description: "demo team applications (dev/stg)"
+  sourceRepos:
+    - http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+  destinations:
+    - name: spoke-dev
+      namespace: demo-app
+    - name: spoke-stg
+      namespace: demo-app
+  clusterResourceWhitelist:
+    # CreateNamespace=true 用に Namespace のみ cluster-scoped を許可
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

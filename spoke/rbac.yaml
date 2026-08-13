@@ -1,0 +1,75 @@
+# 宛先クラスタ (spoke) 側の RBAC。
+# hub の ArgoCD はこのクラスタの ServiceAccount (argocd-manager) の token で接続する。
+# ※本番ではクラウドの IAM 連携 (GKE なら Connect Gateway + Workload Identity) にすると
+#   token レスにできる (このラボとの最大の差)。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-manager
+  namespace: kube-system
+---
+# 長期 token (ラボ用)。IAM 連携構成なら不要になるオブジェクト。
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-manager-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: argocd-manager
+type: kubernetes.io/service-account-token
+---
+# クラスタキャッシュ / 差分計算用の読み取り (全リソース) + CreateNamespace 用の Namespace write
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-manager
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-manager
+subjects:
+  - kind: ServiceAccount
+    name: argocd-manager
+    namespace: kube-system
+---
+# アプリの namespaced write。ラボでは wildcard で簡略化。
+# 本番ではデプロイするリソース種別 (kustomize build 出力) を列挙して最小権限にするのが望ましい。
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-app-writer
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-app-writer
+  namespace: demo-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: argocd-app-writer
+subjects:
+  - kind: ServiceAccount
+    name: argocd-manager
+    namespace: kube-system

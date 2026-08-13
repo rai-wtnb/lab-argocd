@@ -1,0 +1,18 @@
+# ArgoCD 本体。kustomize の helmCharts 機構で argo-cd チャートを展開する
+# (レンダリングに helm CLI が必要。適用は scripts/02-argocd.sh が server-side apply で行う)。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+
+# helm repo add argo https://argoproj.github.io/argo-helm 相当をレンダリング時に行う。
+# チャートバージョンは pin する。
+helmCharts:
+  - name: argo-cd
+    releaseName: argocd
+    repo: https://argoproj.github.io/argo-helm
+    version: 9.7.0
+    namespace: argocd
+    valuesFile: values.yaml
+    includeCRDs: true # CRDsらが kube-apiserver に型として登録される = apply 可能となる

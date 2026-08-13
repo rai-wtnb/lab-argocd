@@ -1,0 +1,65 @@
+# 基盤コンポーネント (Gitea / Vault) を ArgoCD 自身の管理下に置く platform 区画。
+# ApplicationSet が量産する demo 側と対になる「Application CRD を手で書く」実例。
+# - 宛先は in-cluster (= ArgoCD が居る hub 自身。組み込みで登録済みの論理名)
+# - Gitea は鶏と卵 (Git サーバ自身のマニフェストをその Git で管理) のため、
+#   初回のみ scripts/03-gitea.sh が同じファイルを直接 apply → この Application が adopt
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  description: "platform components on hub (gitea / vault)"
+  sourceRepos:
+    - http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+  destinations:
+    - name: in-cluster
+      namespace: gitea
+    - name: in-cluster
+      namespace: vault
+  clusterResourceWhitelist:
+    # マニフェスト側に Namespace を含むため cluster スコープを許可
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitea
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+    targetRevision: HEAD
+    path: platform/gitea
+  destination:
+    name: in-cluster
+    namespace: gitea
+  syncPolicy:
+    automated:
+      selfHeal: true
+      # prune は付けない: platform/gitea が誤って repo から消えたとき、
+      # GitOps のソースである Git サーバごと削除されるのを防ぐ (重要基盤の保護)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+    targetRevision: HEAD
+    path: platform/vault
+  destination:
+    name: in-cluster
+    namespace: vault
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true # dev モードで使い捨てのため全自動でよい

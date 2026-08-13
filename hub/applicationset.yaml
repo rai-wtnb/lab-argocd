@@ -1,0 +1,46 @@
+# git files generator による opt-in の Application 量産。
+# Gitea 上のリポジトリに app.argocd.yaml (マーカー) を置くと、
+# generator がそれを読み Application を 1 つ生成する。
+# マーカーが無いアプリは生成されない (opt-in)。
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: managed-apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+        revision: HEAD
+        files:
+          - path: "app/*/overlay/dev/*/app.argocd.yaml"
+          # stg も同じ hub が管理する (Application 名は hub 内で一意にする必要がある点に注意)
+          - path: "app/*/overlay/stg/*/app.argocd.yaml"
+  template:
+    metadata:
+      name: '{{ .name }}'
+      labels:
+        team: '{{ .team }}'
+      annotations:
+        # monorepo 最適化: 当該アプリ overlay の変更時のみ refresh する
+        argocd.argoproj.io/manifest-generate-paths: '.'
+    spec:
+      project: '{{ .project }}'
+      source:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+        targetRevision: HEAD
+        path: '{{ .path.path }}'
+      destination:
+        # マーカーの env から宛先クラスタを解決する (destinationCluster で上書き可)
+        name: '{{ dig "destinationCluster" (printf "spoke-%s" .env) . }}'
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true    # git から消えたリソースは削除
+          selfHeal: true # live の手動変更は巻き戻す
+        syncOptions:
+          - ServerSideApply=true
+          - CreateNamespace=true
