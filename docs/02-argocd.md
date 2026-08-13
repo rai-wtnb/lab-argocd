@@ -103,7 +103,3 @@ ArgoCD ──sync──▶ K8s API 上の CR ──オペレータが reconcile�
 | 手書き Application | `hub/platform.yaml`(gitea / vault を hub 自身 = in-cluster へ) |
 | 区画(認可) | `hub/appproject.yaml`(demo)+ `hub/platform.yaml`(platform) |
 | 宛先クラスタ側の権限 | `spoke/rbac.yaml` |
-
-## 次に読むもの
-
-- [03-argocd-crds.md](03-argocd-crds.md) — Application / AppProject / ApplicationSet の詳解

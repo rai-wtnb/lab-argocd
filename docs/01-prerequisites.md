@@ -57,7 +57,3 @@ helm のリリース管理は使わない(適用は kubectl の server-side appl
 | 方式 | テンプレートに値を流し込む | YAML にパッチを重ねる |
 | 得意 | 配布物の受け取り・大量の設定点 | 自作マニフェストの環境差分管理 |
 | このラボ | ArgoCD / ESO の導入 | デモアプリの base/overlay、ArgoCD の設定合成 |
-
-## 次に読むもの
-
-- [02-argocd.md](02-argocd.md) — ArgoCD とは何か(GitOps・アーキテクチャ・sync の意味)

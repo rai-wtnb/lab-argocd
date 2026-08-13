@@ -96,7 +96,7 @@ spec:
 - generator は git files 以外にも list / cluster / matrix など多数。「N 個の類似アプリ」
   「M クラスタ × N アプリ」のような fan-out が数行で書ける
 
-## CRD ではないが対で覚える: ラベル付き Secret による登録簿
+## CRD ではないが把握が必要: ラベル付き Secret による登録簿
 
 ArgoCD は接続先の登録に CRD ではなく **`argocd.argoproj.io/secret-type` ラベル付きの Secret** を使う。
 
@@ -108,8 +108,3 @@ ArgoCD は接続先の登録に CRD ではなく **`argocd.argoproj.io/secret-ty
 
 このラボでは cluster 登録のみ使用。Secret の構造は `hub/clusters.yaml`(テンプレート)にあり、
 動的な値(server)と秘密(bearer token)は `scripts/04-spokes.sh` がセットアップ時に埋める。
-Gitea のリポジトリは public なので repository / repo-creds は不要になっている。
-
-## 次に読むもの
-
-- [04-eso.md](04-eso.md) — External Secrets Operator(Secret を GitOps に乗せる方法)
