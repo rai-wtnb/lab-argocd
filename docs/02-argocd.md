@@ -68,7 +68,8 @@ syncPolicy:
 1 つの ArgoCD(hub)が複数クラスタ(spoke)へデプロイできる。
 
 - 宛先クラスタの登録は「`argocd.argoproj.io/secret-type: cluster` ラベル付き Secret」
-  (名前・API サーバの URL・認証情報)。このラボでは `scripts/04-spokes.sh` が生成している
+  (名前・API サーバの URL・認証情報)。このラボでは `hub/clusters.yaml`(テンプレート)に
+  `scripts/04-spokes.sh` が動的な値と秘密を埋めて apply している
 - Application の `destination.name` がこの登録名を参照して解決される
 - どの Application がどのクラスタ×namespace へ行けるかは AppProject が制限する([03-argocd-crds.md](03-argocd-crds.md))
 
