@@ -6,6 +6,13 @@
 #   - server: kind の内部エンドポイントはクラスタ作成のたびに決まる (動的)
 #   - config: bearerToken は本物の秘密で Git に置けない
 # クラウドの IAM 連携 (execProviderConfig) にすると秘密が消え、値ごとコミットできるようになる。
+#
+# 実際に埋まる値の例 (dev の場合):
+#   name:   spoke-dev
+#   server: https://demo-dev-control-plane:6443    # kind ノードのコンテナ名 + API サーバポート
+#   config: '{"bearerToken":"eyJhbGciOiJSUzI1NiIs…(argocd-manager の JWT)…",
+#             "tlsClientConfig":{"insecure":false,"caData":"LS0tLS1CRUdJTi…(クラスタ CA 証明書の base64)…"}}'
+#   (適用後の実物は: kubectl --context kind-demo-hub -n argocd get secret cluster-spoke-dev -o yaml)
 apiVersion: v1
 kind: Secret
 metadata:
