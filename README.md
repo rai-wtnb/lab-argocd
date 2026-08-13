@@ -51,7 +51,9 @@ Gitea と Vault は単なる土台ではなく、それ自体が ArgoCD の**手
 │   ├── platform.yaml        # 基盤区画: AppProject platform + 手書き Application (gitea / vault)
 │   ├── clusters.yaml        # クラスタ登録 Secret のテンプレート (動的な値と秘密は 04-spokes.sh が埋める)
 │   └── applicationset.yaml  # マーカーを読んで Application を量産する仕組み
-├── spoke/rbac.yaml # 宛先クラスタ側の最小権限 RBAC + 接続用 ServiceAccount
+├── spoke/          # 宛先クラスタ側に置くもの
+│   ├── rbac.yaml        #   最小権限 RBAC + 接続用 ServiceAccount
+│   └── eso-values.yaml  #   ESO の values (全て既定のまま。把握すべき既定値の解説をコメントで抜粋)
 ├── seed-repo/      # Gitea に初期投入するリポジトリの中身
 │                   #   (app/ = デモアプリの base/overlay、platform/ = Gitea / Vault 自身のマニフェスト)
 ├── scripts/        # セットアップの実体 (下表。00〜06 を make up が順に呼ぶ)
@@ -70,7 +72,7 @@ Gitea と Vault は単なる土台ではなく、それ自体が ArgoCD の**手
 | `03-gitea.sh` | Gitea を hub へ配置(`seed-repo/platform/gitea/` を直接 apply = 鶏と卵のブートストラップ)→ healthz 待ち → 管理ユーザー `demo` 作成 → public リポジトリ `manifests` を API で作成 → `seed-repo/` の内容を main ブランチへ push |
 | `04-spokes.sh` | 各 spoke へ `spoke/rbac.yaml` を適用 → ServiceAccount の token と kind の内部エンドポイント+CA を取得 → `hub/clusters.yaml`(テンプレート)に埋めて cluster Secret(`spoke-dev` / `spoke-stg`)を hub へ登録 |
 | `05-bootstrap.sh` | AppProject `demo`/`platform`・手書き Application(`gitea`/`vault`)・ApplicationSet `managed-apps` を hub へ適用。gitea は既存リソースを adopt、vault はここから GitOps で新規作成される。demo 側はマーカーが無いので Application 0 件 |
-| `06-eso.sh` | Vault の起動(Application `vault` の sync)を待って初期値を投入 → ESO を spoke-dev へ helm で導入 → SecretStore の認証用 `vault-token` Secret を作成(単体再実行は `make eso-up`) |
+| `06-eso.sh` | Vault の起動(Application `vault` の sync)を待って初期値を投入 → ESO を spoke-dev へ helm で導入(values: `spoke/eso-values.yaml`)→ SecretStore の認証用 `vault-token` Secret を作成(単体再実行は `make eso-up`) |
 | `marker.sh` | マーカー(`app.argocd.yaml`)の追加/削除。Gitea のリポジトリを `.work/manifests` に clone/pull → マーカーを生成 or 削除 → commit & push。`make marker-dev` 等はこれのラッパー(`add\|remove × dev\|stg × アプリ名`) |
 
 ## クラスタ別リソース一覧

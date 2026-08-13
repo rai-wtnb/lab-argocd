@@ -1,31 +1,32 @@
-# ラボ用の最小構成 values。
-# 非HA (チャートのデフォルト)。SSO は使わず、admin + ローカルアカウント (demo-dev) でログインする。
+# ラボ用の最小構成 values。chart 既定からの差分だけを書く (helm は deep merge する)。
+# 各行に chart (9.7.0) の既定値を併記した。既定の全量 (約 4,700 行) は `make argocd-chart-values` で表示できる。
 # REF: https://artifacthub.io/packages/helm/argo/argo-cd?modal=values
 dex:
-  enabled: false # SSO 連携なし (admin とローカルアカウントで足りる)
+  enabled: false # 既定: true。SSO 連携なし (admin とローカルアカウントで足りる)
 notifications:
-  enabled: false # 通知連携なし
+  enabled: false # 既定: true。通知連携なし
 
 server:
   service:
-    # NodePort 30443 を kind の extraPortMappings でホストの 8080 に公開する
+    # 既定: ClusterIP。NodePort 30443 を kind の extraPortMappings でホストの 8080 に公開する
     # (port-forward 不要で https://localhost:8080)
     type: NodePort
-    nodePortHttps: 30443
+    nodePortHttps: 30443 # 既定と同値。kind/hub.yaml の containerPort との対応を明示するために書いている
 
 configs:
   cm:
-    # ラボ体感のため Git ポーリングを短縮 (本番は webhook を配線して即時反映が一般的)
+    # 既定: 120s。ラボ体感のため Git ポーリングを短縮 (本番は webhook を配線して即時反映が一般的)
     timeout.reconciliation: 20s
-    # RBAC デモ用のローカルアカウント (本番は SSO 連携でチームを subject にするのが定石)。
+    # 既定: ローカルアカウントなし (admin のみ)。RBAC デモ用に追加 (本番は SSO 連携でチームを subject にするのが定石)。
     # パスワードは scripts/02-argocd.sh が設定する (demo12345)
     accounts.demo-dev: login
   params:
-    # ApplicationSet generator の再評価間隔も短縮 (cmd-params-cm 経由で env に配線される)
+    # 既定: 未指定 (applicationset-controller 本体の既定は 3m)。generator の再評価間隔を短縮
+    # (cmd-params-cm 経由で env に配線される)
     applicationsetcontroller.requeue.after: 30s
   rbac:
-    # ArgoCD アプリ内 RBAC (Casbin 形式)。admin は RBAC を素通しする superuser。
-    # policy.default はチャート既定の空 = 既定拒否なので、demo-dev は下記の許可分しか操作できない。
+    # 既定: 空。ArgoCD アプリ内 RBAC (Casbin 形式)。admin は RBAC を素通しする superuser。
+    # policy.default も既定の空のまま = 既定拒否なので、demo-dev は下記の許可分しか操作できない。
     policy.csv: |
       # role:team-demo は project demo 配下の Application を見る・sync する・ログを読むことだけできる
       # (delete / override は許可していない → UI で試すと拒否される)

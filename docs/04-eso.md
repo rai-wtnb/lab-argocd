@@ -76,6 +76,10 @@ spoke-dev へ導入する。ArgoCD 本体と同じく「1 つの chart で contr
 なお ArgoCD 本体の chart はバージョンを pin している(`hub/argocd/kustomization.yaml` の 9.7.0)のに対し、
 ESO は pin せず最新を入れる割り切り。本番では ESO も pin + Renovate 等での計画的更新が定石。
 
+values はすべて chart 既定のまま(ArgoCD と違いラボ都合のカスタムが不要なため)。
+把握しておく価値のある既定値(uninstall で CRD ごと消える件、IAM 連携の入口、監視範囲など)は
+`spoke/eso-values.yaml` にコメントで抜粋している。
+
 ## 運用上の性質
 
 - **ローテーションが「値の差し替えだけ」になる**: 外部ストアの値を更新すれば、

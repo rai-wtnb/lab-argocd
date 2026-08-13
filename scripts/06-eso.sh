@@ -39,7 +39,8 @@ helm repo add external-secrets https://charts.external-secrets.io >/dev/null 2>&
 helm repo update external-secrets >/dev/null
 # 初回はイメージ pull で時間がかかることがあるため timeout は長めに取る
 helm upgrade --install external-secrets external-secrets/external-secrets \
-  --kube-context $DEV --namespace external-secrets --create-namespace --wait --timeout 10m
+  --kube-context $DEV --namespace external-secrets --create-namespace --wait --timeout 10m \
+  -f spoke/eso-values.yaml
 
 echo "== SecretStore の認証用 token を demo-app ns に作成 =="
 # クラウドの IAM 連携 (Workload Identity 等) なら不要になる部品 (ラボの token 認証代替)

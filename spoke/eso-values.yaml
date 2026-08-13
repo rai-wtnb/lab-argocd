@@ -1,0 +1,28 @@
+# ESO の values。現状はすべて chart 既定のまま (コメントのみ = 空の上書きで、挙動を変えない)。
+# 変更するときは該当行をコメントインする。既定の全量 (約 970 行) は
+# `helm show values external-secrets/external-secrets` で表示できる。
+# REF: https://artifacthub.io/packages/helm/external-secrets-operator/external-secrets
+#
+# ---- 把握しておく価値のある既定値の抜粋 ----
+#
+# installCRDs: true    # CRD が chart 同梱でリリースの一部になる。keep ポリシーは付かないため、
+#                      # helm uninstall で CRD ごと消え、全 ExternalSecret / SecretStore の削除と
+#                      # (creationPolicy: Owner の) 生成済み Secret の GC まで連鎖する。要注意
+#
+# serviceAccount:
+#   annotations: {}    # クラウド IAM 連携の入口 (GKE なら iam.gke.io/gcp-service-account を書き、
+#                      # controller の KSA を GSA に紐付けて秘密レス認証にする)
+#
+# scopedNamespace: ""                # 監視範囲。既定は全 namespace
+# processClusterStore: true          # ClusterSecretStore を処理するか (テナント分割時に絞る)
+# processClusterExternalSecret: true
+#
+# concurrent: 1        # 並列 reconcile 数。ExternalSecret が増えたときのスループットの壁
+# replicaCount: 1      # 冗長化するなら leaderElect: true とセットで
+# leaderElect: false
+#
+# webhook:
+#   certManager:
+#     enabled: false   # 証明書管理を cert-manager に委譲する切替 (既定は cert-controller が担う)
+#
+# resources: {}        # 各コンポーネントとも既定は無指定。本番では要設定
