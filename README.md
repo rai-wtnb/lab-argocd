@@ -67,7 +67,7 @@ Gitea と Vault は単なる土台ではなく、それ自体が ArgoCD の**手
 | スクリプト | やること |
 |---|---|
 | `00-prereqs.sh` | 必要 CLI(docker / kind / kubectl / git / curl / jq)の存在と docker デーモンへの疎通を確認。足りなければ brew コマンド付きで失敗する |
-| `01-clusters.sh` | kind クラスタ 3 つ(demo-hub / demo-dev / demo-stg)を `kind/*.yaml` の設定で作成(hub は ArgoCD と Gitea、spoke は demo-app の NodePort をホストへ公開)。作成済みならスキップ |
+| `01-clusters.sh` | kind クラスタ 3 つ(demo-hub / demo-dev / demo-stg)を `kind/*.yaml` の設定で作成(hub は ArgoCD と Gitea、spoke は demo-app の NodePort をホストへ公開)。作成済みならスキップ。最後に podinfo イメージをホスト側 docker で pull して spoke へ搬入する(Pod 起動時の pull がクラスタ内 egress の不調で ImagePullBackOff になるのを防ぐ) |
 | `02-argocd.sh` | `hub/argocd/` を `kubectl kustomize --enable-helm` でレンダリングし、server-side apply で hub へ適用(CRD が巨大で client-side apply の上限を超えるため)。全コンポーネントの rollout 完了を待つ |
 | `03-gitea.sh` | Gitea を hub へ配置(`seed-repo/platform/gitea/` を直接 apply = 鶏と卵のブートストラップ)→ healthz 待ち → 管理ユーザー `demo` 作成 → public リポジトリ `manifests` を API で作成 → `seed-repo/` の内容を main ブランチへ push |
 | `04-spokes.sh` | 各 spoke へ `spoke/rbac.yaml` を適用 → ServiceAccount の token と kind の内部エンドポイント+CA を取得 → `hub/clusters.yaml`(テンプレート)に埋めて cluster Secret(`spoke-dev` / `spoke-stg`)を hub へ登録 |
