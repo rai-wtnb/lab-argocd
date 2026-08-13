@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: up down argocd-info argocd-render argocd-chart-values status marker-dev marker-stg unmark-dev unmark-stg eso-up marker-secrets unmark-secrets rotate
+.PHONY: up down argocd-info argocd-render argocd-chart-values status marker-dev marker-stg unmark-dev unmark-stg eso-up marker-secrets unmark-secrets rotate vault-get
 
 up:
 	./scripts/00-prereqs.sh
@@ -60,6 +60,13 @@ marker-secrets:
 
 unmark-secrets:
 	./scripts/marker.sh remove dev demo-secrets
+
+# Vault に入っている値 (正本) を確認する。ESO が写した先は:
+#   kubectl --context kind-demo-dev -n demo-app get secret demo-app-secret -o jsonpath='{.data.message}' | base64 -d
+vault-get:
+	kubectl --context kind-demo-hub -n vault exec deploy/vault -- \
+	  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root \
+	  vault kv get secret/demo-app
 
 # Vault の値を更新する (refreshInterval 15s 後に K8s Secret が追随する)
 rotate:

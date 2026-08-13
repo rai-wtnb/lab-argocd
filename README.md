@@ -42,7 +42,7 @@ Gitea と Vault は単なる土台ではなく、それ自体が ArgoCD の**手
 ## ディレクトリ構成
 
 ```
-├── Makefile        # 入口 (up / argocd-info / argocd-render / status / marker-* / eso-up / rotate / down)
+├── Makefile        # 入口 (up / argocd-info / argocd-render / status / marker-* / eso-up / vault-get / rotate / down)
 ├── docs/           # ドキュメント (事前知識 / ArgoCD / CRD / ESO / ハンズオンシナリオ)
 ├── kind/           # 各クラスタの kind 設定 (ArgoCD / Gitea / demo-app の NodePort をホストへ公開)
 ├── hub/            # hub クラスタに置くもの
@@ -117,7 +117,7 @@ Gitea と Vault は単なる土台ではなく、それ自体が ArgoCD の**手
 | ArgoCD UI | https://localhost:8080 | admin / `make argocd-info` が表示するパスワード | 常時(kind の extraPortMappings 経由)。自己署名証明書の警告は無視してよい |
 | Gitea UI | http://localhost:3000 | demo / demo12345 | 常時(kind の extraPortMappings 経由)。マーカーのコミットが積まれる様子を見られる |
 | demo-app(podinfo の UI) | dev: http://localhost:9898 / stg: http://localhost:9899 | なし | 常時(kind の extraPortMappings 経由)。マーカー同期後に画面へ "hello from DEV" / "hello from STG" が出る |
-| Vault | ホスト非公開 | root token `root` | 操作は `make rotate` か `kubectl --context kind-demo-hub -n vault exec` 経由。クラスタ間からは `demo-hub-control-plane:30201` |
+| Vault | ホスト非公開 | root token `root` | 値の確認は `make vault-get`、更新は `make rotate`(いずれも `kubectl exec` 経由)。クラスタ間からは `demo-hub-control-plane:30201` |
 
 ## 事前準備
 
