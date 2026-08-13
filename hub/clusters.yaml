@@ -1,0 +1,23 @@
+# ArgoCD の宣言的クラスタ登録 (argocd.argoproj.io/secret-type: cluster) の登録簿テンプレート。
+# spoke-dev / spoke-stg の 2 クラスタ分、scripts/04-spokes.sh が
+# __ENV__ / __SERVER__ / __CONFIG__ を埋めて apply する (1 spoke = この Secret 1 つ)。
+#
+# プレースホルダのままコミットしている理由:
+#   - server: kind の内部エンドポイントはクラスタ作成のたびに決まる (動的)
+#   - config: bearerToken は本物の秘密で Git に置けない
+# クラウドの IAM 連携 (execProviderConfig) にすると秘密が消え、値ごとコミットできるようになる。
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-spoke-__ENV__
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster # このラベルが「クラスタ登録簿の行」の印
+type: Opaque
+stringData:
+  # 論理名。AppProject の destinations や Application の destination.name が参照する
+  name: spoke-__ENV__
+  # 宛先 K8s API サーバの URL (kind では同一 docker ネットワーク上のコンテナ名)
+  server: __SERVER__
+  # 認証設定 (JSON)。ラボは ServiceAccount の bearer token + クラスタ CA
+  config: '__CONFIG__'

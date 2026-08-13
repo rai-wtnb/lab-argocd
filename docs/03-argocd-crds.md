@@ -106,8 +106,9 @@ ArgoCD は接続先の登録に CRD ではなく **`argocd.argoproj.io/secret-ty
 | `repository` | 個別リポジトリの接続情報 |
 | `repo-creds` | URL プレフィックス単位の認証テンプレート(配下の全 repo に適用) |
 
-このラボでは cluster 登録(`scripts/04-spokes.sh`)のみ使用。Gitea のリポジトリは public なので
-repository / repo-creds は不要になっている。
+このラボでは cluster 登録のみ使用。Secret の構造は `hub/clusters.yaml`(テンプレート)にあり、
+動的な値(server)と秘密(bearer token)は `scripts/04-spokes.sh` がセットアップ時に埋める。
+Gitea のリポジトリは public なので repository / repo-creds は不要になっている。
 
 ## 次に読むもの
 

@@ -1,4 +1,4 @@
-# ESO (External Secrets Operator) とは
+# ESO: External Secrets Operator とは
 
 ## 解きたい問題: Secret は GitOps に素直に乗らない
 

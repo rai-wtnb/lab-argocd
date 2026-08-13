@@ -25,26 +25,14 @@ for env in dev stg; do
   cadata=$(kubectl --kubeconfig ".work/kubeconfig-$env" config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
 
   echo "== spoke-$env: hub へクラスタ登録 (server=$server) =="
-  # ArgoCD の宣言的クラスタ登録 (argocd.argoproj.io/secret-type: cluster)。
-  # 認証は bearer token (ラボ用) のためこの Secret は本物の秘密を含む (git にコミットしない)。
-  # クラウドの IAM 連携 (execProviderConfig) にすると秘密レスにできる。
+  # Secret の形 (登録簿の構造) は hub/clusters.yaml を参照。ここは値を埋めて apply するだけ。
+  # 認証は bearer token (ラボ用) のため出来上がった Secret は本物の秘密を含む (git にコミットしない)。
   config=$(jq -nc --arg t "$token" --arg ca "$cadata" \
     '{bearerToken:$t, tlsClientConfig:{insecure:false, caData:$ca}}')
-  kubectl --context $HUB -n argocd apply -f - <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cluster-spoke-$env
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: cluster
-type: Opaque
-stringData:
-  name: spoke-$env
-  server: $server
-  config: |
-    $config
-EOF
+  sed -e "s|__ENV__|$env|g" \
+      -e "s|__SERVER__|$server|g" \
+      -e "s|__CONFIG__|$config|g" \
+      hub/clusters.yaml | kubectl --context $HUB -n argocd apply -f -
 done
 
 echo "OK: spoke-dev / spoke-stg 登録完了"

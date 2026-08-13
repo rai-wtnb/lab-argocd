@@ -97,7 +97,7 @@ ArgoCD ──sync──▶ K8s API 上の CR ──オペレータが reconcile�
 | 概念 | ラボの実物 |
 |---|---|
 | ArgoCD 本体 | `hub/argocd/`(chart を kustomize で展開) |
-| クラスタ登録 Secret | `scripts/04-spokes.sh` が hub に apply |
+| クラスタ登録 Secret | `hub/clusters.yaml`(テンプレート)に `scripts/04-spokes.sh` が値を埋めて apply |
 | Application の量産 | `hub/applicationset.yaml` + マーカー |
 | 手書き Application | `hub/platform.yaml`(gitea / vault を hub 自身 = in-cluster へ) |
 | 区画(認可) | `hub/appproject.yaml`(demo)+ `hub/platform.yaml`(platform) |
