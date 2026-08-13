@@ -1,7 +1,8 @@
 # 宛先クラスタ (spoke) 側の RBAC。
 # hub の ArgoCD はこのクラスタの ServiceAccount (argocd-manager) の token で接続する。
-# ※本番ではクラウドの IAM 連携 (GKE なら Connect Gateway + Workload Identity) にすると
-#   token レスにできる (このラボとの最大の差)。
+# ※ 本番ではクラウドの IAM 連携 (GKE なら Connect Gateway + Workload Identity) にすると token レスにできる。
+
+# scripts/04-spokes.sh によって spoke の kube-system に作成される。
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -14,6 +15,8 @@ metadata:
   namespace: kube-system
 ---
 # 長期 token (ラボ用)。IAM 連携構成なら不要になるオブジェクト。
+# この token は 04-spokes.sh が取り出して hub 側の cluster Secret (hub/clusters.yaml の
+# config.bearerToken) に埋められ、hub の ArgoCD が本クラスタへ接続する際の認証に使われる。
 apiVersion: v1
 kind: Secret
 metadata:
