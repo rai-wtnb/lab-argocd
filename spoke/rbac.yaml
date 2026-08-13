@@ -2,7 +2,7 @@
 # hub の ArgoCD はこのクラスタの ServiceAccount (argocd-manager) の token で接続する。
 # ※ 本番ではクラウドの IAM 連携 (GKE なら Connect Gateway + Workload Identity) にすると token レスにできる。
 
-# scripts/04-spokes.sh によって spoke の kube-system に作成される。
+# このファイル全体を scripts/04-spokes.sh が各 spoke へ apply する。
 apiVersion: v1
 kind: Namespace
 metadata:
