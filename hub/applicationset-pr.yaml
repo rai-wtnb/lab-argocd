@@ -1,0 +1,80 @@
+# One environment per PR, with the pull request generator.
+# Generates one Application for each open PR of the Gitea repository demo/manifests.
+# When a PR is closed (close / merge) it drops out of the generator's result, and the Application and its deployed resources are removed.
+# REF: https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Pull-Request/
+#
+# Differences from the marker approach (applicationset.yaml):
+#   - The input is the list of PRs returned by the Git server's API, not files in Git
+#   - The revision that gets synced is the PR's head commit ({{ .head_sha }}), not HEAD (main)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: pr-preview
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - pullRequest:
+        gitea:
+          owner: demo
+          repo: manifests
+          # The Gitea API as seen from inside the hub cluster. The repository is public, so no tokenRef is needed
+          # (a private GitHub repository needs tokenRef or appSecretName)
+          api: http://gitea.gitea.svc.cluster.local:3000
+          # To make it opt-in, filter by label (only PRs with this label are picked up)
+          # labels:
+          #   - preview
+        # How often the PR list is fetched again. The default is 30 minutes. Production usually detects changes immediately with a webhook
+        requeueAfterSeconds: 30
+  template:
+    metadata:
+      # Parameters the generator passes: number / title / branch / branch_slug / target_branch /
+      # head_sha / head_short_sha / head_short_sha_7 / author / labels
+      name: 'demo-app-pr-{{ .number }}'
+      labels:
+        team: demo
+        preview: "true"
+      annotations:
+        preview/branch: '{{ .branch }}'
+        preview/title: '{{ .title }}'
+    spec:
+      project: demo
+      source:
+        repoURL: http://gitea.gitea.svc.cluster.local:3000/demo/manifests.git
+        # Sync the PR's head commit. When a commit is added to the PR, head_sha changes and the
+        # ApplicationSet controller rewrites this value -> Argo CD syncs the new commit
+        targetRevision: '{{ .head_sha }}'
+        path: app/web/overlay/dev/demo-app
+        kustomize:
+          # They sit in the same namespace as main's demo-app, so the names and labels change per PR.
+          # With nameSuffix alone, the Service selector (app: demo-app) would match the Pods of both main and the PR
+          nameSuffix: '-pr-{{ .number }}'
+          commonLabels:
+            app: 'demo-app-pr-{{ .number }}'
+          # One Pod is enough for a PR environment (name under replicas is the name before nameSuffix is applied)
+          replicas:
+            - name: demo-app
+              count: 1
+          patches:
+            # The base Service is fixed to NodePort 30898. Several PRs cannot share one port, so make it ClusterIP
+            # (view the UI through the port-forward of mise pr-forward <number>)
+            - target:
+                kind: Service
+              patch: |-
+                - op: replace
+                  path: /spec/type
+                  value: ClusterIP
+                - op: remove
+                  path: /spec/ports/0/nodePort
+      destination:
+        name: spoke-dev
+        # AppProject demo and the RBAC on the spoke only allow writing to demo-app, so they share the namespace instead of getting their own
+        namespace: demo-app
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true

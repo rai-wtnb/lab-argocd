@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: demo-app
 spec:
-  # NodePort 30898 は kind の extraPortMappings でホストへ公開される
+  # NodePort 30898 is published to the host through kind's extraPortMappings
   # (dev → localhost:9898 / stg → localhost:9899)
   type: NodePort
   selector:

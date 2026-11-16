@@ -7,38 +7,39 @@ existing=$(kind get clusters 2>/dev/null || true)
 if ! grep -qx "demo-hub" <<<"$existing"; then
   kind create cluster --name demo-hub --config kind/hub.yaml
 else
-  echo "skip: demo-hub は作成済み"
+  echo "skip: demo-hub already exists"
 fi
 
 for env in dev stg; do
   if ! grep -qx "demo-$env" <<<"$existing"; then
     kind create cluster --name "demo-$env" --config "kind/$env.yaml"
   else
-    echo "skip: demo-$env は作成済み"
+    echo "skip: demo-$env already exists"
   fi
 done
 
 kubectl --context kind-demo-hub get nodes
 
-# デモアプリのイメージを spoke へ先読み込みする。
-# Pod 起動時の pull はノードコンテナ内からの egress に依存し、colima の NAT 不調で
-# ImagePullBackOff になる事例があるため、ホスト側 docker で pull して搬入しておく。
-# (`kind load docker-image` は provenance 付き multi-arch index の blob 欠落で
-#  ctr import --all-platforms が失敗するため、docker save | ctr import を直接使う)
+# Preload the demo app image into the spokes.
+# A pull at Pod start depends on egress from inside the node container, and it has
+# ended in ImagePullBackOff when colima's NAT misbehaved. So pull with the host's
+# docker and load the image in advance.
+# (`kind load docker-image` fails in ctr import --all-platforms on a missing blob of a
+#  multi-arch index with provenance, so docker save | ctr import is used directly)
 PODINFO_IMG=$(grep -o 'ghcr.io/stefanprodan/podinfo:[0-9.]*' seed-repo/app/web/base/demo-app/deployment.yaml | head -1)
-echo "== $PODINFO_IMG を pull して spoke へ搬入 =="
-# タグ固定なのでキャッシュ済みなら pull しない (egress が不安定でも進めるように)
+echo "== Pulling $PODINFO_IMG and loading it into the spokes =="
+# The tag is pinned, so skip the pull when cached (keeps going even if egress is flaky)
 if docker image inspect "$PODINFO_IMG" >/dev/null 2>&1; then
-  echo "skip: ホスト側にキャッシュ済み"
+  echo "skip: already cached on the host"
 else
   docker pull "$PODINFO_IMG"
 fi
 for env in dev stg; do
   if docker exec "demo-$env-control-plane" crictl inspecti "$PODINFO_IMG" >/dev/null 2>&1; then
-    echo "skip: demo-$env には搬入済み"
+    echo "skip: already loaded into demo-$env"
   else
     docker save "$PODINFO_IMG" | docker exec -i "demo-$env-control-plane" \
       ctr --namespace=k8s.io images import --digests - >/dev/null
-    echo "OK: demo-$env へ搬入"
+    echo "OK: loaded into demo-$env"
   fi
 done

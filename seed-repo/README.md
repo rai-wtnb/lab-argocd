@@ -1,11 +1,11 @@
-# manifests (ラボ用シードリポジトリ)
+# manifests (seed repository for the lab)
 
-`app/<kind>/overlay/<env>/<app>/` 構造で Kubernetes マニフェストを管理するリポジトリ。
+A repository that manages Kubernetes manifests in the `app/<kind>/overlay/<env>/<app>/` layout.
 
-- `app.argocd.yaml`(マーカー)を overlay ディレクトリに置くと、hub の ApplicationSet が
-  Application を自動生成してこの overlay を同期する(opt-in)。
-- マーカーの追加/削除は demo リポジトリ側の `make marker-dev` / `make unmark-dev` などで行う。
+- Placing `app.argocd.yaml` (a marker) in an overlay directory makes the ApplicationSet on the hub
+  generate an Application that syncs that overlay (opt-in).
+- Markers are added / removed from the demo repository with `mise marker-dev` / `mise unmark-dev` and so on.
 
-`platform/` は hub 上の基盤コンポーネント(Gitea / Vault)のマニフェスト。こちらはマーカー方式
-ではなく、手書きの Application(hub の `platform.yaml`)が同期する。Gitea は自分自身のマニフェスト
-をこのリポジトリで持つ鶏と卵の関係なので、初回のみセットアップスクリプトが直接 apply している。
+`platform/` holds the manifests of the platform components on the hub (Gitea / Vault). These do not use
+markers. Hand-written Applications (`platform.yaml` on the hub) sync them. Gitea keeps its own manifest
+in this repository, a chicken-and-egg relation, so the setup script applies it directly the first time only.

@@ -6,36 +6,37 @@ GITEA_URL=http://localhost:3000
 GITEA_USER=demo
 GITEA_PASS=demo12345
 
-# 鶏と卵のブートストラップ: Gitea 自身のマニフェストは Gitea 上のリポジトリ (platform/gitea)
-# で管理されるが、最初の 1 回は Git サーバがまだ無いので同じファイルを直接 apply する。
-# 以後は手書き Application `gitea` (hub/platform.yaml) がこれを adopt して管理する。
+# Chicken-and-egg bootstrap: Gitea's own manifest is managed in a repository on Gitea
+# (platform/gitea), but the very first time there is no Git server yet, so the same file
+# is applied directly. After that, the hand-written Application `gitea` (hub/platform.yaml)
+# adopts and manages it.
 kubectl --context $HUB apply -f seed-repo/platform/gitea/gitea.yaml
 kubectl --context $HUB -n gitea rollout status deployment/gitea --timeout=300s
 
-echo "Gitea healthz 待ち..."
+echo "Waiting for Gitea healthz..."
 for i in $(seq 1 60); do
   curl -fsS "$GITEA_URL/api/healthz" >/dev/null 2>&1 && break
   sleep 2
 done
 curl -fsS "$GITEA_URL/api/healthz" >/dev/null
 
-# 管理ユーザー作成 (再実行時は既存のため失敗してよい)
+# Create the admin user (on a re-run it already exists, so failing is fine)
 kubectl --context $HUB -n gitea exec deploy/gitea -- \
   gitea admin user create --admin --username "$GITEA_USER" --password "$GITEA_PASS" \
   --email demo@example.com --must-change-password=false 2>/dev/null \
-  || echo "skip: ユーザー $GITEA_USER は作成済み"
+  || echo "skip: user $GITEA_USER already exists"
 
-# 公開リポジトリ manifests を作成 (public = ArgoCD が匿名 clone できる)
+# Create the public repository manifests (public = Argo CD can clone it anonymously)
 if ! curl -fsS -u "$GITEA_USER:$GITEA_PASS" "$GITEA_URL/api/v1/repos/$GITEA_USER/manifests" >/dev/null 2>&1; then
   curl -fsS -u "$GITEA_USER:$GITEA_PASS" -X POST "$GITEA_URL/api/v1/user/repos" \
     -H 'Content-Type: application/json' \
     -d '{"name":"manifests","private":false,"default_branch":"main","auto_init":false}' >/dev/null
-  echo "OK: リポジトリ manifests 作成"
+  echo "OK: created the repository manifests"
 else
-  echo "skip: リポジトリ manifests は作成済み"
+  echo "skip: the repository manifests already exists"
 fi
 
-# シード内容を push (冪等: 常に seed-repo の内容で main を作り直す)
+# Push the seed content (idempotent: main is always recreated from seed-repo)
 rm -rf .work/seed
 mkdir -p .work
 cp -R seed-repo .work/seed
@@ -46,4 +47,4 @@ git -c user.name=demo -c user.email=demo@example.com commit -qm "seed: demo-app 
 git push -q --force "http://$GITEA_USER:$GITEA_PASS@localhost:3000/$GITEA_USER/manifests.git" main
 popd >/dev/null
 
-echo "OK: Gitea 準備完了 ($GITEA_URL, $GITEA_USER/$GITEA_PASS)"
+echo "OK: Gitea is ready ($GITEA_URL, $GITEA_USER/$GITEA_PASS)"

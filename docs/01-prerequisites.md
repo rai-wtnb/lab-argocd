@@ -1,59 +1,63 @@
-# 事前知識: 登場するツールの層構造
+# Prerequisites: the layers of the tools involved
 
-ArgoCD に入る前に、このラボで使う道具が「どの層で何をしているか」を押さえる。
+Before getting into Argo CD, get a grip on which layer each tool in this lab works at and what it does there.
 
-```
-macOS
- └── colima (lima の VM)        ← Linux カーネルを用意する層
-      └── docker デーモン       ← コンテナを動かす層
-           └── kind             ← コンテナをノードに見立てて K8s クラスタを作る層
-                └── Kubernetes  ← ここに ArgoCD とアプリが乗る
-```
+![Inside macOS is the Colima VM, inside that Docker, inside that three kind node containers, and a cluster runs in each container](images/local-env.png)
 
-## lima / colima — macOS に Linux を用意する
+| Layer | Role |
+|---|---|
+| Colima VM | Provides a Linux kernel. Containers run on Linux features, so macOS needs a VM |
+| Docker | Runs containers inside the VM. The `docker` command on macOS sends its instructions here through a socket |
+| Node | One docker container stands in for one Kubernetes node (kind). In this lab there is one per cluster, three in total |
+| Apps running in Pods | Run inside each cluster. Argo CD, Gitea and Vault are on demo-hub, the demo app on demo-dev and demo-stg |
 
-コンテナは Linux カーネルの機能(namespace / cgroup)で動くため、macOS 上では直接実行できず、必ずどこかに Linux VM が要る。
+Only the CLIs and the browser are on the macOS side. Everything that runs is inside the VM.
+Access to `localhost:8080` and the like goes through colima's port forwarding and kind's `extraPortMappings` to reach a NodePort on a node.
 
-- **lima**: macOS 用の軽量 Linux VM マネージャ。VM の作成・ファイル共有・ポート転送を面倒みる
-- **colima**: lima を docker / containerd / k8s 用途向けにパッケージしたラッパー。`colima start` 一発で「Linux VM + docker デーモン + ホストから使える docker CLI 設定」まで揃う。Docker Desktop の代替としてよく使われる
+## lima / colima: providing Linux on macOS
 
-## kind — docker コンテナで K8s クラスタを作る
+Containers run on Linux kernel features (namespaces / cgroups), so they cannot run directly on macOS. A Linux VM is always needed somewhere.
 
-**K**ubernetes **in** **D**ocker。docker コンテナ 1 個を「ノード 1 台」に見立ててクラスタを作る。
+- **lima**: a lightweight Linux VM manager for macOS. It takes care of creating VMs, file sharing and port forwarding
+- **colima**: a wrapper that packages lima for docker / containerd / k8s use. A single `colima start` gives you a Linux VM + the docker daemon + the docker CLI configuration usable from the host. It is often used as a Docker Desktop replacement
 
-- 起動が速い(数十秒)、複数クラスタを並べられる、消すのも一瞬 — 検証・CI 向き
-- クラスタ間は同じ docker ネットワーク上にあるため、コンテナ名で相互に到達できる
-  (このラボの hub→spoke 接続や spoke→Vault 接続はこの性質を使っている)
-- `kind create cluster` は `~/.kube/config` に context を追加し、current-context を切り替える点に注意
+## kind: K8s clusters out of docker containers
 
-## kubectl と context
+**K**ubernetes **in** **D**ocker. It builds a cluster by treating one docker container as one node.
 
-kubectl は「どのクラスタに話すか」を kubeconfig の **context** で決める。クラスタが 3 つあるこのラボでは、
-事故防止のため全コマンドで `--context kind-demo-dev` のように明示している。
+- Starts fast (tens of seconds), several clusters can sit side by side, and deleting is instant. Good for testing and CI
+- The clusters are on the same docker network, so they can reach each other by container name
+  (the hub -> spoke and spoke -> Vault connections in this lab rely on this)
+- Note that `kind create cluster` adds a context to `~/.kube/config` and switches current-context
 
-## helm — テンプレート型のパッケージマネージャ
+## kubectl and contexts
 
-K8s マニフェストの配布形式。**chart**(テンプレート群)に **values**(設定値)を流し込んで
-マニフェストを生成(render)する。
+kubectl decides which cluster to talk to by the **context** in the kubeconfig. This lab has three clusters, so
+to prevent accidents every command states it explicitly, as in `--context kind-demo-dev`.
 
-- 世の中のミドルウェアは chart で配布されることが多い(ArgoCD も ESO も chart が公式配布物)
-- `helm install` はリリース管理(履歴・rollback)まで行うが、render だけ使う運用もある(次項)
+## helm: a template-based package manager
 
-## kustomize — パッチ型のマニフェスト合成
+A distribution format for K8s manifests. **Values** (settings) are fed into a **chart** (a set of templates) to
+generate (render) the manifests.
 
-テンプレートを使わず、**素の YAML(base)に差分(overlay / patch)を重ねて**合成する。kubectl に内蔵
-(`kubectl kustomize`, `kubectl apply -k`)。
+- Middleware is commonly distributed as charts (the official distribution of both Argo CD and ESO is a chart)
+- `helm install` also does release management (history, rollback), but some setups use only the rendering (next section)
 
-- `base/` に共通定義、`overlay/dev/` `overlay/stg/` に環境差分、という構成が定番
-- このラボの seed-repo(デモアプリ)がこの構成
+## kustomize: patch-based manifest composition
 
-**helm との合流点**: kustomize には `helmCharts` 機構があり、`--enable-helm` を付けると
-「chart を values で render した結果」を kustomize の素材として取り込める。
-このラボの ArgoCD 本体(`hub/argocd/`)はこの方式 — chart の配布力と kustomize の合成力の併用で、
-helm のリリース管理は使わない(適用は kubectl の server-side apply)。
+No templates. It composes manifests by **layering differences (overlays / patches) on plain YAML (a base)**. It is
+built into kubectl (`kubectl kustomize`, `kubectl apply -k`).
+
+- The standard layout is shared definitions in `base/` and per-environment differences in `overlay/dev/` and `overlay/stg/`
+- The seed-repo of this lab (the demo app) uses this layout
+
+**Where it meets helm**: kustomize has a `helmCharts` feature, and with `--enable-helm` it can take
+"the result of rendering a chart with values" as input for kustomize.
+Argo CD itself in this lab (`hub/argocd/`) works this way. It combines the distribution strength of charts with the
+composition strength of kustomize, and does not use helm's release management (kubectl's server-side apply does the applying).
 
 | | helm | kustomize |
 |---|---|---|
-| 方式 | テンプレートに値を流し込む | YAML にパッチを重ねる |
-| 得意 | 配布物の受け取り・大量の設定点 | 自作マニフェストの環境差分管理 |
-| このラボ | ArgoCD / ESO の導入 | デモアプリの base/overlay、ArgoCD の設定合成 |
+| Approach | Feeds values into templates | Layers patches on YAML |
+| Good at | Consuming distributed software, many settings | Managing per-environment differences of your own manifests |
+| In this lab | Installing Argo CD / ESO | base/overlay of the demo app, composing the Argo CD settings |

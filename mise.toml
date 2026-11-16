@@ -1,0 +1,161 @@
+# mise - pins the tool versions and is the entry point for tasks
+# https://mise.jdx.dev/
+#
+# First time: mise trust && mise install
+# List tasks: mise tasks
+#
+# Tasks are run in the short form, mise <task>, without "run".
+# The short form only works while the task name is not a mise command. mise up is
+# mise upgrade (it upgrades the tools), so the setup task is called cluster-up.
+# The old names remain as aliases for the long form (mise run up, mise run down).
+
+[tools]
+# Local VM + docker runtime (Docker Desktop replacement). Start: colima start argocd-lab --cpu 4 --memory 8 --disk 30
+colima = "0.10.3"
+# docker CLI (the daemon runs inside the colima VM)
+docker-cli = "29.9.3"
+kind = "0.33.0"
+kubectl = "1.37.2"
+# Used to render Argo CD itself (kubectl kustomize --enable-helm) and to install ESO
+helm = "3.22.1"
+jq = "1.8.2"
+# git / curl / htpasswd come from macOS
+
+# --- setup / teardown ---
+
+[tasks.cluster-up]
+alias = "up"
+description = "Create kind x3 -> Argo CD -> Gitea + seed repo -> register spokes -> bootstrap -> ESO (5-10 min)"
+run = [
+  "./scripts/00-prereqs.sh",
+  "./scripts/01-clusters.sh",
+  "./scripts/02-argocd.sh",
+  "./scripts/03-gitea.sh",
+  "./scripts/04-spokes.sh",
+  "./scripts/05-bootstrap.sh",
+  "./scripts/06-eso.sh",
+  "echo ''",
+  "echo '== Done. Next: mise argocd-info shows the UI URL and password / mise marker-dev starts the demo =='",
+]
+
+[tasks.cluster-down]
+alias = "down"
+description = "Delete the three kind clusters and .work"
+run = '''
+kind delete cluster --name demo-hub || true
+kind delete cluster --name demo-dev || true
+kind delete cluster --name demo-stg || true
+rm -rf .work
+'''
+
+# --- Argo CD ---
+
+[tasks.argocd-info]
+description = "Show the Argo CD UI URL and the admin password"
+run = '''
+echo "admin password: $(kubectl --context kind-demo-hub -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
+echo "RBAC demo user: demo-dev / demo12345 (can sync, cannot delete. See E in docs/05-handson.md)"
+echo "https://localhost:8080 (always reachable through the NodePort. The certificate warning can be ignored)"
+'''
+
+[tasks.argocd-render]
+description = "Show the rendered Argo CD manifests (chart defaults + values.yaml, the final form)"
+run = "kubectl kustomize --enable-helm hub/argocd"
+
+[tasks.argocd-chart-values]
+description = "Show all default values of the chart (the version is read from the pin in hub/argocd/kustomization.yaml)"
+run = '''
+helm show values argo-cd --repo https://argoproj.github.io/argo-helm \
+  --version "$(awk '/^ *version:/{print $2}' hub/argocd/kustomization.yaml)"
+'''
+
+[tasks.status]
+description = "Show the Applications on the hub and demo-app on each spoke"
+run = '''
+echo "== Applications (hub) =="
+kubectl --context kind-demo-hub -n argocd get applications 2>/dev/null || true
+echo "//////////////////////////////////////////////////////////////////"
+echo "== spoke-dev demo-app =="
+kubectl --context kind-demo-dev -n demo-app get deploy,pods 2>/dev/null || echo "(none)"
+echo "//////////////////////////////////////////////////////////////////"
+echo "== spoke-stg demo-app =="
+kubectl --context kind-demo-stg -n demo-app get deploy,pods 2>/dev/null || echo "(none)"
+'''
+
+# --- markers (git files generator) ---
+
+[tasks.marker-dev]
+description = "Add the demo-app marker to dev"
+run = "./scripts/marker.sh add dev"
+
+[tasks.marker-stg]
+description = "Add the demo-app marker to stg"
+run = "./scripts/marker.sh add stg"
+
+[tasks.unmark-dev]
+description = "Remove the demo-app marker from dev"
+run = "./scripts/marker.sh remove dev"
+
+[tasks.unmark-stg]
+description = "Remove the demo-app marker from stg"
+run = "./scripts/marker.sh remove stg"
+
+# --- ESO / Vault (part of cluster-up. For re-running on its own. Idempotent) ---
+
+[tasks.eso-up]
+description = "Re-run seeding Vault and installing ESO"
+run = "./scripts/06-eso.sh"
+
+[tasks.marker-secrets]
+description = "Add the demo-secrets (ExternalSecret) marker to dev"
+run = "./scripts/marker.sh add dev demo-secrets"
+
+[tasks.unmark-secrets]
+description = "Remove the demo-secrets marker from dev"
+run = "./scripts/marker.sh remove dev demo-secrets"
+
+# Check the value stored in Vault (the source of truth). The copy ESO made is at:
+#   kubectl --context kind-demo-dev -n demo-app get secret demo-app-secret -o jsonpath='{.data.message}' | base64 -d
+[tasks.vault-get]
+description = "Show the value stored in Vault (the source of truth)"
+run = '''
+kubectl --context kind-demo-hub -n vault exec deploy/vault -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root \
+  vault kv get secret/demo-app
+'''
+
+# Update the value in Vault (the K8s Secret follows after refreshInterval 15s)
+[tasks.rotate]
+description = "Update the value in Vault (e.g. mise rotate v2)"
+usage = 'arg "<msg>" help="Value to put into message of secret/demo-app in Vault"'
+run = '''
+kubectl --context kind-demo-hub -n vault exec deploy/vault -- \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root \
+  vault kv put secret/demo-app message="${usage_msg?}"
+'''
+
+# --- Pull Request generator (docs/06-pr-generator.md) ---
+
+[tasks.pr-open]
+description = "Push a branch to Gitea and open a PR (e.g. mise pr-open blue)"
+usage = 'arg "[name]" default="blue" help="Name of the PR. The branch is preview/<name>"'
+run = './scripts/pr.sh open "${usage_name?}"'
+
+[tasks.pr-update]
+description = "Add a commit to the branch of an open PR (e.g. mise pr-update blue)"
+usage = 'arg "[name]" default="blue" help="Name of the PR"'
+run = './scripts/pr.sh update "${usage_name?}"'
+
+[tasks.pr-close]
+description = "Close the PR (e.g. mise pr-close blue)"
+usage = 'arg "[name]" default="blue" help="Name of the PR"'
+run = './scripts/pr.sh close "${usage_name?}"'
+
+[tasks.pr-status]
+description = "Show the open PRs and the Applications / Deployments generated from them"
+run = "./scripts/pr.sh status"
+
+[tasks.pr-forward]
+description = "Make the podinfo of a PR reachable at http://localhost:9900 (e.g. mise pr-forward 1)"
+usage = 'arg "<number>" help="PR number"'
+run = 'kubectl --context kind-demo-dev -n demo-app port-forward "svc/demo-app-pr-${usage_number?}" 9900:9898'

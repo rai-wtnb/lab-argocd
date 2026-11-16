@@ -1,10 +1,10 @@
-# GitOps のソースになる Git リポジトリを提供する Gitea。hub クラスタ内で完結させる。
-# - ArgoCD からはクラスタ内 DNS: http://gitea.gitea.svc.cluster.local:3000
-# - 手元からは NodePort 経由:   http://localhost:3000 (kind/hub.yaml の extraPortMappings)
+# Gitea, which provides the Git repository that is the source for GitOps. Self-contained in the hub cluster.
+# - From Argo CD, in-cluster DNS:     http://gitea.gitea.svc.cluster.local:3000
+# - From the host, through NodePort:  http://localhost:3000 (extraPortMappings in kind/hub.yaml)
 #
-# 鶏と卵に注意: Gitea 自身のマニフェストを Gitea 上のリポジトリで管理している。
-# 初回だけ scripts/03-gitea.sh がこのファイルを直接 apply し (ブートストラップ)、
-# 以後は手書き Application `gitea` (hub/platform.yaml) がこれを adopt して管理する。
+# Mind the chicken-and-egg: Gitea's own manifest is managed in a repository on Gitea.
+# The first time only, scripts/03-gitea.sh applies this file directly (bootstrap), and after that
+# the hand-written Application `gitea` (hub/platform.yaml) adopts and manages it.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -32,7 +32,7 @@ spec:
     matchLabels:
       app: gitea
   strategy:
-    type: Recreate # PVC (RWO) を持つため
+    type: Recreate # because it has a PVC (RWO)
   template:
     metadata:
       labels:
@@ -70,7 +70,7 @@ spec:
           persistentVolumeClaim:
             claimName: gitea-data
         - name: config
-          emptyDir: {} # app.ini は起動時に env から再生成される
+          emptyDir: {} # app.ini is regenerated from env at startup
 ---
 apiVersion: v1
 kind: Service

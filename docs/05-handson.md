@@ -1,287 +1,287 @@
-# ハンズオンシナリオ集
+# Hands-on scenarios
 
-`make up` 済みであることが前提。3 部構成:
+This assumes `mise cluster-up` is done. Three parts:
 
-- **第 1 部(基本)**: GitOps の基本動作を一巡
-- **第 2 部(応用)**: ArgoCD の挙動を深掘りする実験。すべてこのラボで実施可能
-- **第 3 部(拡張)**: 「もし〜するなら何が必要か」の解説。読むだけ(実際には行わない)
+- **Part 1 (basics)**: one pass through the basic behaviour of GitOps
+- **Part 2 (experiments)**: experiments that dig into how Argo CD behaves. All of them can be done in this lab
+- **Part 3 (extensions)**: explanations of "what would it take to ...". Reading only (nothing is actually done)
 
-3 つの画面を開いたまま進めると変化が追いやすい:
-ArgoCD UI(https://localhost:8080)/ Gitea(http://localhost:3000)/ podinfo(http://localhost:9898)
+Keeping three views open as you go makes the changes easy to follow:
+Argo CD UI (https://localhost:8080) / Gitea (http://localhost:3000) / podinfo (http://localhost:9898)
 
 ---
 
-## 第 1 部: 基本シナリオ
+## Part 1: basic scenarios
 
-### 1. opt-in の証明
+### 1. Proving it is opt-in
 
-- **目的**: Application は「マーカーを置いた分だけ」生成されることを確認する
-- **手順**: ArgoCD UI を開く
-- **観察**: Applications に居るのは platform 区画の `gitea` / `vault`(手書き Application。`hub/platform.yaml`)の 2 件だけで、demo 区画は 0 件。AppProject `demo` と ApplicationSet `managed-apps` は居るのに Application が無い — 機構は待機中で、入力(マーカー)が無い状態
+- **Goal**: Confirm that Applications are generated only for the markers that exist
+- **Steps**: Open the Argo CD UI
+- **Observe**: The only Applications are the two of the platform project, `gitea` / `vault` (hand-written Applications. `hub/platform.yaml`), and the demo project has 0. AppProject `demo` and ApplicationSet `managed-apps` exist, yet there is no Application. The machinery is waiting and has no input (markers)
 
-### 2. マーカーで生成 → 同期
+### 2. Generate with a marker -> sync
 
-- **目的**: 「ファイルを 1 個 push しただけでアプリがデプロイされる」を体感する
-- **手順**: `make marker-dev` → Gitea でコミットが積まれたのを見る → UI を眺めて待つ(30 秒〜3 分)
-- **置かれるもの**: `scripts/marker.sh` が以下の内容を
-  `app/web/overlay/dev/demo-app/app.argocd.yaml` として生成し push する
-  (Gitea UI か `.work/manifests/` で実物を確認できる):
+- **Goal**: Experience "pushing a single file deploys an app"
+- **Steps**: `mise marker-dev` -> see the commit land in Gitea -> watch the UI and wait (30 seconds to 3 minutes)
+- **What gets placed**: `scripts/marker.sh` generates the following as
+  `app/web/overlay/dev/demo-app/app.argocd.yaml` and pushes it
+  (you can see the real file in the Gitea UI or in `.work/manifests/`):
   ```yaml
-  # ApplicationSet (hub/applicationset.yaml) の files generator が読むマーカー
-  name: demo-app       # Application 名 (hub 内で一意)
-  team: demo           # 所有チーム (label になる)
-  project: demo        # 所属する AppProject
-  namespace: demo-app  # 同期先 namespace
-  env: dev             # 同期先クラスタの解決に使う (spoke-<env>)
+  # Marker read by the files generator of the ApplicationSet (hub/applicationset.yaml)
+  name: demo-app       # Application name (unique within the hub)
+  team: demo           # owning team (becomes a label)
+  project: demo        # the AppProject it belongs to
+  namespace: demo-app  # destination namespace
+  env: dev             # used to resolve the destination cluster (spoke-<env>)
   ```
-- **観察**:
-  - Application `demo-app` が出現し、OutOfSync → Syncing → **Synced / Healthy** と遷移する
-  - ツリービューに Deployment / Service / Pod がぶら下がる(リソースの親子関係)
-  - `kubectl --context kind-demo-dev -n demo-app get pods` で spoke 側に実体があること
-  - http://localhost:9898 に "hello from DEV" が出ること
+- **Observe**:
+  - The Application `demo-app` appears and moves OutOfSync -> Syncing -> **Synced / Healthy**
+  - The tree view shows the Deployment / Service / Pods hanging off it (the parent-child relation of resources)
+  - `kubectl --context kind-demo-dev -n demo-app get pods` shows the real thing on the spoke
+  - http://localhost:9898 shows "hello from DEV"
 
-### 3. selfHeal — 手動変更は巻き戻る
+### 3. selfHeal: manual changes are reverted
 
-- **目的**: 「Git が唯一の真実」の強制力を見る
-- **手順**:
+- **Goal**: See the force behind "Git is the single source of truth"
+- **Steps**:
   ```bash
   kubectl --context kind-demo-dev -n demo-app scale deploy/demo-app --replicas=5
   watch kubectl --context kind-demo-dev -n demo-app get deploy
   ```
-- **観察**: 数十秒で replicas が 2 に戻る。UI の Application イベントに sync の記録が残る。
-  「クラスタを直接いじる運用」がこの世界では成立しないことの体感
+- **Observe**: Within tens of seconds replicas goes back to 2. The Application events in the UI keep a record of the sync.
+  This is what it feels like when operating by poking the cluster directly no longer works
 
-### 4. Git 経由の変更が唯一の変更手段
+### 4. A change through Git is the only way to change
 
-- **目的**: 正規の変更フロー(編集 → push → 自動反映)を体験する
-- **手順**: `.work/manifests/app/web/overlay/dev/demo-app/kustomization.yaml` の
-  `replicas: 2` を `3` に変えて commit & push(または message の文言を変える)
-- **観察**: ポーリング後に sync され、Pod が 3 つに増える(message を変えた場合は
-  podinfo の画面文言が変わる — Deployment の env 変更なので Pod は作り直される)
+- **Goal**: Experience the proper change flow (edit -> push -> reflected automatically)
+- **Steps**: In `.work/manifests/app/web/overlay/dev/demo-app/kustomization.yaml`, change
+  `replicas: 2` to `3`, then commit & push (or change the text of the message)
+- **Observe**: After the poll it is synced and the Pods grow to 3 (if you changed the message, the text
+  in the podinfo UI changes. It is a change to the Deployment's env, so the Pods are recreated)
 
-### 5. stg 展開と Application 名の一意性
+### 5. Rolling out to stg, and unique Application names
 
-- **目的**: 同じ hub が複数環境を管理するときの名前設計を知る
-- **手順**: `make marker-stg`
-- **観察**: Application は `demo-app-stg` という**別名**で生成され、spoke-stg に同期される
-  (http://localhost:9899 に "hello from STG")。Application 名は 1 つの ArgoCD 内で一意のため、
-  複数環境を同居させるなら名前に環境を織り込む必要がある(マーカーの `name` がその置き場)
+- **Goal**: Learn how to design names when one hub manages several environments
+- **Steps**: `mise marker-stg`
+- **Observe**: The Application is generated under a **different name**, `demo-app-stg`, and synced to spoke-stg
+  ("hello from STG" at http://localhost:9899). Application names are unique within one Argo CD, so
+  environments that live side by side need the environment woven into the name (`name` in the marker is where it goes)
 
-### 6. AppProject 区画 — 同期先の制限
+### 6. AppProject boundaries: restricting the destination
 
-- **目的**: AppProject が「越境デプロイ」を止めることを確認する
-- **手順**: `.work/manifests` の dev マーカーの `namespace: demo-app` を `namespace: default` に
-  書き換えて push
-- **観察**: Application が Sync エラーになる(`destination ... is not permitted in project demo`)。
-  AppProject の destinations 許可リストに無い宛先は、マニフェストがどう頑張っても同期されない。
-  確認後は `namespace: demo-app` に戻して push(復旧も Git 経由)
+- **Goal**: Confirm that AppProject stops a deployment that crosses the boundary
+- **Steps**: In `.work/manifests`, rewrite `namespace: demo-app` in the dev marker to `namespace: default`
+  and push
+- **Observe**: The Application hits a sync error (`destination ... is not permitted in project demo`).
+  A destination that is not in the destinations allowlist of the AppProject is never synced, whatever the manifests say.
+  Afterwards, put `namespace: demo-app` back and push (recovery goes through Git too)
 
-### 7. prune — マーカー削除 = アプリ削除
+### 7. prune: removing the marker = removing the app
 
-- **目的**: 「Git から消えたものは実体も消える」と、revert がロールバックになる理由を掴む
-- **手順**: `make unmark-dev`
-- **観察**: Application `demo-app` ごと消え、spoke-dev の Deployment / Pod も削除される。
-  http://localhost:9898 が応答しなくなる。逆に言えば、切替コミットを revert すれば
-  元の状態に完全に戻る — これが GitOps のロールバック
+- **Goal**: Grasp "what is removed from Git is removed for real", and why a revert is a rollback
+- **Steps**: `mise unmark-dev`
+- **Observe**: The whole Application `demo-app` disappears, and the Deployment / Pods on spoke-dev are deleted.
+  http://localhost:9898 stops responding. Put the other way round, reverting the commit that made the switch
+  restores the previous state completely. That is rollback in GitOps
 
-### 8〜10. ESO — 秘密を Git に置かずに配る
+### 8-10. ESO: shipping secrets without putting them in Git
 
-基盤(Vault = 外部ストア、ESO)は `make up` で導入済み。
+The foundation (Vault = the external store, ESO) is already installed by `mise cluster-up`.
 
 ```bash
-make marker-secrets  # 8. ExternalSecret を"2個目のマーカーアプリ"として配布
+mise marker-secrets  # 8. ship the ExternalSecret as a "second marker app"
 kubectl --context kind-demo-dev -n demo-app get secret demo-app-secret -o jsonpath='{.data.message}' | base64 -d
-                     # 9. 生成された Secret の値を確認 (=> s3cr3t-from-vault-v1)
-make rotate MSG=v2   # 10. 正本 (Vault) を更新 → refreshInterval(15秒) 後に Secret が追随
+                     # 9. check the value of the generated Secret (=> s3cr3t-from-vault-v1)
+mise rotate v2       # 10. update the source of truth (Vault) -> the Secret follows after refreshInterval (15s)
 ```
 
-- **観察**:
-  - Git のどこにも秘密の値が現れないまま、K8s Secret が生成・更新される(詳細は [04-eso.md](04-eso.md))
-  - マーカー 1 ファイルで 2 個目のアプリが生えた = 量産機構の再演(`app/secrets/` は
-    `app/web/` と別ディレクトリだが、generator の glob が自動で拾う)
-  - 観察ポイント: ArgoCD 上で ExternalSecret が **CRD スキーマ既定値により恒常 OutOfSync** に
-    なることがある。ApplicationSet template に annotation
-    `argocd.argoproj.io/compare-options: ServerSideDiff=true` を足すと解消する
-    (本番運用で ServerSideDiff が推奨される理由の実演)
+- **Observe**:
+  - The K8s Secret is generated and updated while the secret value appears nowhere in Git (details in [04-eso.md](04-eso.md))
+  - One marker file grew a second app = the mass-production machinery again (`app/secrets/` is a
+    different directory from `app/web/`, but the generator's glob picks it up automatically)
+  - A point to watch: on Argo CD the ExternalSecret can end up **permanently OutOfSync because of CRD schema defaults**.
+    Adding the annotation `argocd.argoproj.io/compare-options: ServerSideDiff=true`
+    to the ApplicationSet template resolves it
+    (a demonstration of why ServerSideDiff is recommended in production)
 
 ---
 
-## 第 2 部: 応用シナリオ(挙動の深掘り)
+## Part 2: experiments (digging into the behaviour)
 
-### A. Synced と Healthy は独立している
+### A. Synced and Healthy are independent
 
-- **目的**: 「Git 通りに apply された(Synced)」と「アプリが元気(Healthy)」は別物だと知る
-- **手順**: `.work/manifests/app/web/overlay/dev/demo-app/kustomization.yaml` に
-  存在しないイメージタグへの上書きを足して push:
+- **Goal**: Learn that "applied exactly as in Git (Synced)" and "the app is well (Healthy)" are different things
+- **Steps**: In `.work/manifests/app/web/overlay/dev/demo-app/kustomization.yaml`,
+  add an override to an image tag that does not exist and push:
   ```yaml
   images:
     - name: ghcr.io/stefanprodan/podinfo
       newTag: 0.0.0-broken
   ```
-- **観察**: sync は成功し **Synced** になるが、Pod が ImagePullBackOff になり
-  **Progressing → Degraded** に落ちる。「Synced = 安全」ではないことの実例
-- **復旧**: `git -C .work/manifests revert HEAD --no-edit && git -C .work/manifests push`
-  → revert コミットが sync され Healthy に戻る(第 1 部 7 の「revert = ロールバック」の実践)
+- **Observe**: The sync succeeds and it becomes **Synced**, but the Pods go into ImagePullBackOff and it
+  drops to **Progressing -> Degraded**. A concrete case of "Synced" not meaning "safe"
+- **Recover**: `git -C .work/manifests revert HEAD --no-edit && git -C .work/manifests push`
+  -> the revert commit is synced and it returns to Healthy (putting "revert = rollback" from part 1, scenario 7 into practice)
 
-### B. 生成された Application は手で編集できない
+### B. A generated Application cannot be edited by hand
 
-- **目的**: ApplicationSet の所有権(ポリシーは template、データはマーカー)を体感する
-- **手順**: 生成物を直接書き換えてみる:
+- **Goal**: Experience the ownership of an ApplicationSet (policy in the template, data in the marker)
+- **Steps**: Try rewriting the generated object directly:
   ```bash
   kubectl --context kind-demo-hub -n argocd patch application demo-app --type merge \
     -p '{"spec":{"source":{"path":"app/web/overlay/stg/demo-app"}}}'
   kubectl --context kind-demo-hub -n argocd get application demo-app -o jsonpath='{.spec.source.path}' -w
   ```
-- **観察**: applicationset-controller が template 通りの値に巻き戻す。
-  selfHeal(spoke のリソースを守る)と同じ構図が、Application リソース自身にも効いている —
-  変更したければマーカーか template を変えるしかない
+- **Observe**: applicationset-controller reverts it to the value in the template.
+  The same structure as selfHeal (which protects the resources on the spoke) applies to the Application resource itself.
+  To change it, the only way is to change the marker or the template
 
-### C. 名前の衝突を起こしてみる
+### C. Cause a name collision
 
-- **目的**: hub 内で Application 名が重複するとどうなるかを安全に確認する
-- **手順**: `.work/manifests` の stg マーカーの `name: demo-app-stg` を `name: demo-app` に
-  書き換えて push(dev マーカーが生きている状態で)
-- **観察**: ApplicationSet が重複を検出し、`kubectl --context kind-demo-hub -n argocd describe
-  applicationset managed-apps` の status conditions にエラーが記録される。
-  片方の定義が勝ち、もう片方は反映されない(どちらが勝つかは保証されない — だから設計で防ぐ)
-- **復旧**: `name: demo-app-stg` に戻して push
+- **Goal**: Safely confirm what happens when Application names collide within the hub
+- **Steps**: In `.work/manifests`, rewrite `name: demo-app-stg` in the stg marker to `name: demo-app`
+  and push (while the dev marker is alive)
+- **Observe**: The ApplicationSet detects the duplicate, and the status conditions of `kubectl --context kind-demo-hub -n argocd describe
+  applicationset managed-apps` record an error.
+  One definition wins and the other is not applied (which one wins is not guaranteed, which is why you prevent it by design)
+- **Recover**: Put `name: demo-app-stg` back and push
 
-### D. Refresh / Hard Refresh / Sync の違い
+### D. The difference between Refresh / Hard Refresh / Sync
 
-- **目的**: UI のボタンの意味を正しく知る
-- **手順**: UI で Application を開き、それぞれを押して挙動を見る
+- **Goal**: Know exactly what the buttons in the UI mean
+- **Steps**: Open an Application in the UI, press each and watch what happens
 
-| 操作 | 何をするか | いつ使うか |
+| Operation | What it does | When to use it |
 |---|---|---|
-| Refresh | Git を読み直して render し、diff を再計算する(apply はしない) | push したのに反映が見えない時 |
-| Hard Refresh | render キャッシュを破棄して Refresh | kustomize の出力が怪しい時 |
-| Sync | diff を apply する | automated を待たず即時反映したい時 |
+| Refresh | Re-reads Git, renders, and recomputes the diff (no apply) | When you pushed but do not see it reflected |
+| Hard Refresh | Discards the render cache, then Refresh | When the kustomize output looks off |
+| Sync | Applies the diff | When you want it reflected now instead of waiting for automated |
 
-- **補足**: このラボは automated sync + ポーリング短縮(20〜30 秒)なので普段はボタン不要。
-  本番では Git の webhook を配線して push 起点の即時 Refresh にするのが定石(第 3 部 X6)
+- **Note**: This lab uses automated sync + shortened polling (20-30 seconds), so the buttons are normally not needed.
+  In production the norm is to wire a Git webhook for an immediate, push-driven Refresh (part 3, X6)
 
-### E. ArgoCD の RBAC(policy.csv)— 人間側の権限境界
+### E. Argo CD RBAC (policy.csv): the permission boundary on the human side
 
-- **目的**: K8s RBAC(同期の実行主体の権限)とは別レイヤの、
-  「人間が ArgoCD の UI/API で何をできるか」の認可を体感する
-- **前提知識**: 権限は `argocd-rbac-cm` の `policy.csv`(Casbin 形式)で定義される:
+- **Goal**: Experience the authorization of "what a human can do in the Argo CD UI/API",
+  a different layer from K8s RBAC (the permissions of whoever executes the sync)
+- **Background**: Permissions are defined in `policy.csv` of `argocd-rbac-cm` (Casbin format):
   ```
-  p, role:team-demo, applications, sync, demo/*, allow   # p 行: role への許可 (project demo 配下に限定)
-  g, demo-dev, role:team-demo                            # g 行: ユーザー → role の割り当て
+  p, role:team-demo, applications, sync, demo/*, allow   # p line: a permission for a role (limited to project demo)
+  g, demo-dev, role:team-demo                            # g line: assigns a user to a role
   ```
-  既定は拒否(policy.default が空)で、admin だけは RBAC を素通しする superuser
-- **手順**: シークレットウィンドウで https://localhost:8080 を開き、
-  **demo-dev / demo12345** でログイン(`hub/argocd/values.yaml` で定義したローカルアカウント)
-  1. Application 一覧・詳細・ログが**見える**(get / logs 許可)
-  2. Sync ボタン → **成功する**(sync 許可)
-  3. Delete → **permission denied**(delete は許可していない)
-  4. platform 区画の `gitea` / `vault` は**一覧に出ない**(許可が `demo/*` 限定のため、
-     他プロジェクトは存在ごと見えない)
-- **観察**: admin タブと並べると同じ画面で押せるボタンが違う。
-  本番ではこの `g` 行の subject をローカルユーザーではなく SSO(IdP)のチーム・グループにして、
-  「チーム X は project X の Application しか触れない」というマルチテナント区画を作るのが定石
+  The default is deny (policy.default is empty), and only admin is a superuser that bypasses RBAC
+- **Steps**: Open https://localhost:8080 in a private window and
+  log in as **demo-dev / demo12345** (the local account defined in `hub/argocd/values.yaml`)
+  1. The Application list, details and logs are **visible** (get / logs allowed)
+  2. The Sync button -> **succeeds** (sync allowed)
+  3. Delete -> **permission denied** (delete is not allowed)
+  4. `gitea` / `vault` of the platform project **do not show in the list** (the permission is limited to `demo/*`, so
+     other projects are not even visible)
+- **Observe**: Next to an admin tab, the same screen has different buttons you can press.
+  In production the norm is to make the subject of this `g` line an SSO (IdP) team or group instead of a local user,
+  building the multi-tenant boundary "team X can only touch the Applications of project X"
 
-### F. 失敗した自動 sync は同一リビジョンでは再試行されない
+### F. A failed automatic sync is not retried on the same revision
 
-- **目的**: 「automated + selfHeal なら何をしても勝手に直る」わけではない境界を知る
-- **手順**: platform 区画の Vault を namespace ごと消す
+- **Goal**: Learn where "with automated + selfHeal everything fixes itself" stops being true
+- **Steps**: Delete Vault of the platform project together with its namespace
   ```bash
   kubectl --context kind-demo-hub delete ns vault
   ```
-- **観察**: selfHeal が即座に sync を始めるが、ns の終了処理と競合して
-  Deployment/Service の作成が `namespaces "vault" not found` で失敗することがある。
-  このとき数回のリトライは**失敗したタスクだけ**を再適用するため
-  (成功扱いになった Namespace は作り直されず)失敗が確定し、以後
-  **同一リビジョンに対する自動 sync は再試行されない** — アプリは SyncError のまま止まる
-- **復旧**: 手動 sync(UI の Sync ボタン)で新しい operation を起こせば一発で直る。
-  `make eso-up` でもよい(スクリプトが同じことを kubectl の operation patch で行い、
-  Vault の初期値も入れ直す。dev モードの Vault はインメモリなので pod が消えると値も消える)
-- **教訓**: 自動 sync の再試行は「新しいコミット」か「live 状態の新たな変化」が引き金。
-  失敗で止まったら人間(または新コミット)が operation を起こす必要がある
+- **Observe**: selfHeal starts a sync right away, but it can race with the termination of the ns and
+  fail to create the Deployment/Service with `namespaces "vault" not found`.
+  The few retries then re-apply **only the failed tasks**
+  (the Namespace, counted as succeeded, is not recreated), so the failure becomes final, and after that
+  **the automatic sync is not retried for the same revision**. The app stays stuck in SyncError
+- **Recover**: A manual sync (the Sync button in the UI) starts a new operation and fixes it in one go.
+  `mise eso-up` works too (the script does the same with an operation patch through kubectl and
+  also re-seeds the initial value in Vault. Vault in dev mode is in-memory, so the value is gone when the pod is gone)
+- **Lesson**: What triggers a retry of the automatic sync is "a new commit" or "a new change in the live state".
+  Once it has stopped on a failure, a human (or a new commit) has to start an operation
 
 ---
 
-## 第 3 部: 拡張シナリオ(解説のみ。実際には行わない)
+## Part 3: extensions (explanation only. Nothing is actually done)
 
-### X1. spoke クラスタを増やすなら
+### X1. To add a spoke cluster
 
-新しい宛先クラスタ 1 つにつき、5 つの関門を開ける:
+For each new destination cluster, five gates have to be opened:
 
-1. **接続** — クラスタ登録 Secret(`argocd.argoproj.io/secret-type: cluster`)を hub に置く。
-   name / server URL / 認証(このラボは SA token、本番は IAM 連携)
-2. **書き込み権限** — 宛先クラスタ側に argocd-manager(read + Namespace)と
-   app-writer(アプリの kind への write)の RBAC を敷く
-3. **許可** — AppProject の destinations に「新クラスタ × namespace」を追加
-4. **発見** — ApplicationSet がその環境のマーカーを読めるか(このラボの generator は
-   dev / stg のパスを列挙しているので、新環境ならパス追加が要る。X4 参照)
-5. **名前** — hub 内で Application 名が一意になる命名を決める
+1. **Connection**: place a cluster registration Secret (`argocd.argoproj.io/secret-type: cluster`) on the hub.
+   name / server URL / auth (an SA token in this lab, IAM integration in production)
+2. **Write permission**: lay down RBAC on the destination cluster for argocd-manager (read + Namespace) and
+   app-writer (write on the kinds of the apps)
+3. **Allowance**: add "new cluster x namespace" to the destinations of the AppProject
+4. **Discovery**: can the ApplicationSet read the markers of that environment (the generator of this lab
+   lists the dev / stg paths, so a new environment needs a path added. See X4)
+5. **Naming**: decide a naming scheme that keeps Application names unique within the hub
 
-このラボでは `hub/clusters.yaml` + `scripts/04-spokes.sh` + `hub/appproject.yaml` がこの一式に対応している。
-チェックどれか 1 つが欠けると「生成されない / 同期拒否 / リソース不可視 / apply forbidden」と
-**別々の症状**で止まるので、症状から欠けた関門を逆引きできるようになると強い。
+In this lab `hub/clusters.yaml` + `scripts/04-spokes.sh` + `hub/appproject.yaml` correspond to this set.
+If any one of the checks is missing, it stops with a **different symptom** each time: "not generated / sync denied /
+resources invisible / apply forbidden". Being able to work back from the symptom to the missing gate is a real strength.
 
-### X2. アプリを増やすなら
+### X2. To add an app
 
-1. seed-repo 側に `app/<kind>/base/<新アプリ>/` と `app/<kind>/overlay/<env>/<新アプリ>/` を作る
-2. 別 namespace に置くなら: AppProject の destinations と spoke の RoleBinding に namespace を追加
-   (demo-app namespace のままなら基盤変更ゼロ)
-3. マーカーを置く — 以上
+1. On the seed-repo side, create `app/<kind>/base/<new app>/` and `app/<kind>/overlay/<env>/<new app>/`
+2. If it goes in a different namespace: add the namespace to the destinations of the AppProject and to the RoleBinding on the spoke
+   (staying in the demo-app namespace means zero platform changes)
+3. Place a marker. That is all
 
-「アプリ追加のコストがマーカー 1 ファイルに漸近する」のが量産機構の狙い。
-実はこのラボの `demo-secrets`(ESO)が 2 個目のアプリの実例になっている。
+The aim of the mass-production machinery is that "the cost of adding an app approaches one marker file".
+In fact `demo-secrets` (ESO) in this lab is a real example of a second app.
 
-### X3. 対象ディレクトリ(app/<kind>)を増やすなら
+### X3. To add a target directory (app/<kind>)
 
-**何もしなくてよい**。generator のパスは `app/*/overlay/dev/*/app.argocd.yaml` と
-ワイルドカードなので、`app/api/` や `app/batch/` を新設しても自動で対象になる。
-実例: このラボの `app/web/`(demo-app)と `app/secrets/`(demo-secrets)は
-ApplicationSet に一切手を入れず共存している。
-「増やすときに基盤を触らせない」ための glob 設計 — 逆に対象を絞りたくなったら
-パスを列挙式に変える、というトレードオフ。
+**Nothing needs to be done**. The path of the generator is `app/*/overlay/dev/*/app.argocd.yaml`, with
+wildcards, so newly created `app/api/` or `app/batch/` are picked up automatically.
+A real example: `app/web/` (demo-app) and `app/secrets/` (demo-secrets) in this lab
+coexist without touching the ApplicationSet at all.
+This is a glob design meant to keep the platform untouched when things are added. The trade-off is that
+once you want to narrow the targets, you change the paths into an explicit list.
 
-### X4. 環境(prod)を増やすなら
+### X4. To add an environment (prod)
 
-X1(クラスタ追加)に加えて:
+On top of X1 (adding a cluster):
 
-1. ApplicationSet の files に `app/*/overlay/prod/*/app.argocd.yaml` を追加
-   (env のパスは明示列挙 — 環境の追加は意図的な操作であるべき、という設計)
-2. destination 解決(`spoke-{{ .env }}`)は env フィールド駆動なので template 変更は不要
-3. 本番だけ挙動を変えたい場合(例: automated を外して手動 Sync にする)は
-   template が全アプリ共通である以上、ApplicationSet を環境別に分けることになる —
-   「型が割れるなら ApplicationSet を分ける」が定石
+1. Add `app/*/overlay/prod/*/app.argocd.yaml` to files of the ApplicationSet
+   (the env paths are listed explicitly. The design says adding an environment should be a deliberate act)
+2. Destination resolution (`spoke-{{ .env }}`) is driven by the env field, so the template does not change
+3. To make only production behave differently (for example, dropping automated for a manual Sync),
+   since the template is shared by every app, you end up splitting the ApplicationSet per environment.
+   The norm is "when the shape diverges, split the ApplicationSet"
 
-### X5. private リポジトリにするなら
+### X5. To make the repository private
 
-Gitea のリポジトリを private にすると ArgoCD は clone できなくなる。対処は
-`argocd.argoproj.io/secret-type: repository`(個別リポジトリ)または `repo-creds`
-(URL プレフィックス単位の認証テンプレート)の Secret を hub に置く。
-詳細は [03-argocd-crds.md](03-argocd-crds.md) の登録簿 Secret の節。
+If the Gitea repository is made private, Argo CD can no longer clone it. The remedy is to
+place a Secret of `argocd.argoproj.io/secret-type: repository` (a single repository) or `repo-creds`
+(an auth template per URL prefix) on the hub.
+Details are in the section on registry Secrets in [03-argocd-crds.md](03-argocd-crds.md).
 
-### X6. push 起点の即時反映にするなら
+### X6. To get immediate, push-driven updates
 
-ポーリングを待たず push で即 Refresh させるには、Git サーバの webhook を 2 本配線する:
+To Refresh right on push instead of waiting for the poll, wire two webhooks from the Git server:
 
-1. Application の refresh 用: `https://<argocd-server>/api/webhook`
-2. ApplicationSet(マーカー検出)用: applicationset-controller の webhook(port 7000)
+1. For refreshing Applications: `https://<argocd-server>/api/webhook`
+2. For the ApplicationSet (marker detection): the webhook of applicationset-controller (port 7000)
 
-このラボはポーリング間隔の短縮(`timeout.reconciliation` / requeue)で代替している。
+This lab substitutes shortened polling intervals (`timeout.reconciliation` / requeue).
 
-### X7. 通知を足すなら
+### X7. To add notifications
 
-notifications-controller を有効化し(このラボの values では無効)、
-trigger(on-sync-failed 等)と template(メッセージ)を設定した上で、
-Application の annotation(`notifications.argoproj.io/subscribe.<trigger>.<service>: <宛先>`)で購読する。
-ApplicationSet 経由なら template の annotations に入れて全アプリ一括購読にできる。
-運用の定石は「失敗系のみ通知(正常時は無音)」— 全イベント通知は必ずノイズ化する。
+Enable notifications-controller (disabled in the values of this lab),
+configure triggers (on-sync-failed etc.) and templates (the messages), and then
+subscribe with an annotation on the Application (`notifications.argoproj.io/subscribe.<trigger>.<service>: <recipient>`).
+Through an ApplicationSet, putting it in annotations of the template subscribes every app at once.
+The operational norm is "notify failures only (silent when healthy)". Notifying every event always turns into noise.
 
-### X8. 本番に向けて残る差分
+### X8. The remaining gap to production
 
-このラボと本番構成の差は README の「このラボと本番運用の違い」の表を参照。
-特に大きい 3 つ:
+For the differences between this lab and a production setup, see the table "How this lab differs from production" in the README.
+The three biggest:
 
-- **認証の秘密レス化**: SA token → クラウド IAM 連携(cluster Secret から秘密が消える)
-- **self-management**: ArgoCD 自身も ArgoCD の Application として管理し、
-  本体のアップグレードも GitOps に乗せる(app-of-apps パターン)
-- **SSO(IdP 連携)**: `policy.csv` によるチーム区画自体はシナリオ E で体験済み。本番で変わるのは
-  `g` 行の subject をローカルユーザー(demo-dev)から IdP のチーム・グループに置き換える点と、
-  admin ログイン・ローカルアカウントを無効化する点
+- **Secretless auth**: SA token -> cloud IAM integration (the secret disappears from the cluster Secret)
+- **Self-management**: Argo CD itself is managed as an Argo CD Application too, and
+  upgrades of Argo CD itself ride on GitOps (the app-of-apps pattern)
+- **SSO (IdP integration)**: the team boundary by `policy.csv` itself was experienced in scenario E. What changes in production is
+  that the subject of the `g` line is replaced from a local user (demo-dev) with an IdP team or group, and
+  that admin login and local accounts are disabled

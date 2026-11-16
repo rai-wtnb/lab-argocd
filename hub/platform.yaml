@@ -1,8 +1,9 @@
-# 基盤コンポーネント (Gitea / Vault) を ArgoCD 自身の管理下に置く platform 区画。
-# ApplicationSet が量産する demo 側と対になる「Application CRD を手で書く」実例。
-# - 宛先は in-cluster (= ArgoCD が居る hub 自身。組み込みで登録済みの論理名)
-# - Gitea は鶏と卵 (Git サーバ自身のマニフェストをその Git で管理) のため、
-#   初回のみ scripts/03-gitea.sh が同じファイルを直接 apply → この Application が adopt
+# The platform project, which puts the platform components (Gitea / Vault) under Argo CD's own management.
+# A worked example of writing the Application CRD by hand, the counterpart of the demo side that an
+# ApplicationSet mass-produces.
+# - The destination is in-cluster (= the hub itself, where Argo CD runs. A built-in, pre-registered logical name)
+# - Gitea is chicken-and-egg (the Git server's own manifest is managed in that Git), so the first time only
+#   scripts/03-gitea.sh applies the same file directly, and then this Application adopts it
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -18,7 +19,7 @@ spec:
     - name: in-cluster
       namespace: vault
   clusterResourceWhitelist:
-    # マニフェスト側に Namespace を含むため cluster スコープを許可
+    # The manifests include a Namespace, so cluster scope is allowed
     - group: ""
       kind: Namespace
   namespaceResourceWhitelist:
@@ -42,8 +43,8 @@ spec:
   syncPolicy:
     automated:
       selfHeal: true
-      # prune は付けない: platform/gitea が誤って repo から消えたとき、
-      # GitOps のソースである Git サーバごと削除されるのを防ぐ (重要基盤の保護)
+      # No prune: if platform/gitea is removed from the repo by mistake, this keeps the Git server,
+      # which is the source of GitOps itself, from being deleted (protects critical infrastructure)
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -62,4 +63,4 @@ spec:
   syncPolicy:
     automated:
       selfHeal: true
-      prune: true # dev モードで使い捨てのため全自動でよい
+      prune: true # dev mode and disposable, so fully automatic is fine

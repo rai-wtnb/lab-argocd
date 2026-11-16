@@ -1,6 +1,6 @@
-# hub クラスタ。NodePort をホストへ公開する:
-# - Gitea (30300 → localhost:3000)。手元の git push 用。ArgoCD はクラスタ内 DNS 経由で同じ Gitea を見る
-# - ArgoCD UI (30443 → localhost:8080)。port-forward なしで常時アクセスできるようにする
+# The hub cluster. Publishes NodePorts to the host:
+# - Gitea (30300 -> localhost:3000). For git push from the host. Argo CD reaches the same Gitea through in-cluster DNS
+# - Argo CD UI (30443 -> localhost:8080). Always reachable, with no port-forward
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:

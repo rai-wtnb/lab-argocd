@@ -1,10 +1,10 @@
-# 外部シークレットストアとして使う Vault (dev モード)。hub クラスタに置き、
-# spoke の ESO からは NodePort 経由 http://demo-hub-control-plane:30201 で見える
-# (= アプリのクラスタから見て「外部のシークレットストア」)。
-# dev モードはインメモリ・root token 固定なので完全にデモ専用。
+# Vault (dev mode), used as the external secret store. It sits in the hub cluster, and ESO on
+# the spoke reaches it through the NodePort at http://demo-hub-control-plane:30201
+# (= an "external secret store" from the app cluster's point of view).
+# dev mode is in-memory with a fixed root token, so it is strictly for demos.
 #
-# Gitea と違いブートストラップ不要 — 手書き Application `vault` (hub/platform.yaml) の
-# sync が最初からこのファイルを配る (純粋な GitOps 管理)。
+# Unlike Gitea, no bootstrap is needed. The sync of the hand-written Application `vault`
+# (hub/platform.yaml) ships this file from the start (pure GitOps management).
 apiVersion: v1
 kind: Namespace
 metadata:

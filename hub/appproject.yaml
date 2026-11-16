@@ -1,5 +1,5 @@
-# チーム区画。
-# 「このプロジェクトの Application はどのクラスタ×namespace にしか同期できないか」の許可リスト。
+# The team's project.
+# The allowlist of which cluster x namespace the Applications of this project may sync to.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -15,7 +15,7 @@ spec:
     - name: spoke-stg
       namespace: demo-app
   clusterResourceWhitelist:
-    # CreateNamespace=true 用に Namespace のみ cluster-scoped を許可
+    # Allow only Namespace as cluster-scoped, for CreateNamespace=true
     - group: ""
       kind: Namespace
   namespaceResourceWhitelist:

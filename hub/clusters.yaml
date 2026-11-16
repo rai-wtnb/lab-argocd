@@ -1,30 +1,31 @@
-# ArgoCD の宣言的クラスタ登録 (argocd.argoproj.io/secret-type: cluster) の登録簿テンプレート。
-# spoke-dev / spoke-stg の 2 クラスタ分、scripts/04-spokes.sh が
-# __ENV__ / __SERVER__ / __CONFIG__ を埋めて apply する (1 spoke = この Secret 1 つ)。
+# Template of a registry entry for Argo CD's declarative cluster registration
+# (argocd.argoproj.io/secret-type: cluster).
+# For the two clusters spoke-dev / spoke-stg, scripts/04-spokes.sh fills in
+# __ENV__ / __SERVER__ / __CONFIG__ and applies it (1 spoke = 1 of this Secret).
 #
-# プレースホルダのままコミットしている理由:
-#   - server: kind の内部エンドポイントはクラスタ作成のたびに決まる (動的)
-#   - config: bearerToken は本物の秘密で Git に置けない
-# クラウドの IAM 連携 (execProviderConfig) にすると秘密が消え、値ごとコミットできるようになる。
+# Why it is committed with placeholders:
+#   - server: kind's internal endpoint is decided each time the cluster is created (dynamic)
+#   - config: bearerToken is a real secret and cannot live in Git
+# With cloud IAM integration (execProviderConfig) the secret disappears and the values can be committed too.
 #
-# 実際に埋まる値の例 (dev の場合):
+# Example of the values actually filled in (for dev):
 #   name:   spoke-dev
-#   server: https://demo-dev-control-plane:6443    # kind ノードのコンテナ名 + API サーバポート
-#   config: '{"bearerToken":"eyJhbGciOiJSUzI1NiIs…(argocd-manager の JWT)…",
-#             "tlsClientConfig":{"insecure":false,"caData":"LS0tLS1CRUdJTi…(クラスタ CA 証明書の base64)…"}}'
-#   (適用後の実物は: kubectl --context kind-demo-hub -n argocd get secret cluster-spoke-dev -o yaml)
+#   server: https://demo-dev-control-plane:6443    # container name of the kind node + API server port
+#   config: '{"bearerToken":"eyJhbGciOiJSUzI1NiIs…(JWT of argocd-manager)…",
+#             "tlsClientConfig":{"insecure":false,"caData":"LS0tLS1CRUdJTi…(base64 of the cluster CA certificate)…"}}'
+#   (the real one after applying: kubectl --context kind-demo-hub -n argocd get secret cluster-spoke-dev -o yaml)
 apiVersion: v1
 kind: Secret
 metadata:
   name: cluster-spoke-__ENV__
   namespace: argocd
   labels:
-    argocd.argoproj.io/secret-type: cluster # このラベルが「クラスタ登録簿の行」の印
+    argocd.argoproj.io/secret-type: cluster # this label marks a row of the cluster registry
 type: Opaque
 stringData:
-  # 論理名。AppProject の destinations や Application の destination.name が参照する
+  # Logical name. Referenced by destinations of an AppProject and destination.name of an Application
   name: spoke-__ENV__
-  # 宛先 K8s API サーバの URL (kind では同一 docker ネットワーク上のコンテナ名)
+  # URL of the destination K8s API server (with kind, the container name on the shared docker network)
   server: __SERVER__
-  # 認証設定 (JSON)。ラボは ServiceAccount の bearer token + クラスタ CA
+  # Auth settings (JSON). The lab uses a ServiceAccount bearer token + the cluster CA
   config: '__CONFIG__'

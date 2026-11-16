@@ -1,105 +1,100 @@
-# ArgoCD とは
+# What is Argo CD
 
-Kubernetes 向けの GitOps CD ツール。「Git に書かれた宣言(desired)とクラスタの実状態(live)を
-比較し続け、差分があれば Git 側に収束させる」ことだけをやり続けるコントローラ群。
+A GitOps CD tool for Kubernetes. It is a group of controllers that keeps doing one thing: comparing the declaration written in Git (desired) with the actual state of the cluster (live) and, when they differ, converging on the Git side.
 
-## GitOps という考え方
+## The GitOps idea
 
-従来の push 型 CD(CI が kubectl apply を叩く)との対比で掴むのが早い。
+The quickest way to get it is to contrast it with traditional push-style CD (CI runs kubectl apply).
 
-| | push 型(CI が apply) | GitOps(pull 型) |
+| | Push style (CI applies) | GitOps (pull style) |
 |---|---|---|
-| 変更の起点 | CI パイプラインの実行 | Git のコミット |
-| クラスタ認証情報 | CI に配る必要がある | クラスタ側(or hub)に閉じる |
-| 手動変更(kubectl edit) | 次のデプロイまで残る | 検知され自動で巻き戻る |
-| ロールバック | 再デプロイ手順 | git revert |
-| 「今何が動いているか」 | CI ログを掘る | Git を見れば分かる |
+| What starts a change | A CI pipeline run | A Git commit |
+| Cluster credentials | Must be handed to CI | Stay inside the cluster (or the hub) |
+| Manual changes (kubectl edit) | Remain until the next deploy | Are detected and reverted automatically |
+| Rollback | A redeploy procedure | git revert |
+| "What is running now" | Dig through CI logs | Look at Git |
 
-核になる不変条件は **「Git が唯一の真実(single source of truth)」**。
-クラスタへの変更手段を Git 経由に一本化することで、監査・再現・復旧が全部 Git の操作に還元される。
+The core invariant is that **Git is the single source of truth**. By funnelling every change to the cluster through Git, auditing, reproduction and recovery all reduce to Git operations.
 
-## 動作原理: reconcile ループ
+## How it works: the reconcile loop
 
 ```mermaid
 flowchart LR
-    G[Git リポジトリ] -->|clone + render| RS[repo-server<br>desired state]
-    C[クラスタ] -->|list/watch| AC[application-controller<br>live state のキャッシュ]
+    G[Git repository] -->|clone + render| RS[repo-server<br>desired state]
+    C[Cluster] -->|list/watch| AC[application-controller<br>cache of the live state]
     RS --> D{diff}
     AC --> D
-    D -->|差分あり| S[sync = apply]
+    D -->|differs| S[sync = apply]
     S --> C
 ```
 
-- **desired**: Git のマニフェスト(kustomize / helm は render してから比較)
-- **live**: クラスタの実リソース。watch でキャッシュし続ける
-- 差分の扱いは syncPolicy で決める(次節)
+- **desired**: the manifests in Git (kustomize / helm are rendered before comparing)
+- **live**: the real resources in the cluster. They are kept cached through watches
+- syncPolicy decides what to do with a difference (next section)
 
-## syncPolicy — このラボで体感する 3 点セット
+## syncPolicy: the set of three you get a feel for in this lab
 
 ```yaml
 syncPolicy:
   automated:
-    prune: true    # Git から消えたリソースは実クラスタからも削除
-    selfHeal: true # 手動変更 (kubectl edit/scale) を検知して巻き戻す
+    prune: true    # resources removed from Git are deleted from the real cluster too
+    selfHeal: true # manual changes (kubectl edit/scale) are detected and reverted
   syncOptions:
     - ServerSideApply=true
     - CreateNamespace=true
 ```
 
-この 3 つが有効だと運用は「**宣言 = 管轄**」になる:
+With these three enabled, operations become "**what is declared is what is governed**":
 
-- Git に書いたフィールドが書き換えられれば → 巻き戻る(selfHeal)
-- Git からリソースを消せば → 実体も消える(prune)
-- つまり変更・削除・ロールバックのすべてが Git 操作(PR と revert)に一本化される
+- If a field written in Git is changed -> it is reverted (selfHeal)
+- If a resource is removed from Git -> the real thing is removed too (prune)
+- In other words, every change, deletion and rollback is funnelled into Git operations (PRs and reverts)
 
-## アーキテクチャ(コンポーネント)
+## Architecture (components)
 
-| コンポーネント | 形 | 役割 |
+| Component | Kind | Role |
 |---|---|---|
-| application-controller | StatefulSet | **本体**。diff と sync、health 評価。宛先クラスタのキャッシュを抱えるためメモリ大食い |
-| repo-server | Deployment | Git を clone して render(kustomize/helm) |
-| server | Deployment | Web UI と API(CLI の接続先) |
-| applicationset-controller | Deployment | ApplicationSet から Application を量産する(生成だけ。sync はしない) |
-| redis | Deployment | render 結果などのキャッシュ |
-| dex / notifications-controller | Deployment | SSO / 通知(このラボでは無効化) |
+| application-controller | StatefulSet | **The core**. Diffing, syncing and health assessment. It holds the cache of the destination clusters, so it is memory-hungry |
+| repo-server | Deployment | Clones Git and renders (kustomize/helm) |
+| server | Deployment | The web UI and the API (what the CLI connects to) |
+| applicationset-controller | Deployment | Mass-produces Applications from ApplicationSets (generation only. It does not sync) |
+| redis | Deployment | Cache for render results and the like |
+| dex / notifications-controller | Deployment | SSO / notifications (disabled in this lab) |
 
-## マルチクラスタ(hub-spoke)
+## Multi-cluster (hub-spoke)
 
-1 つの ArgoCD(hub)が複数クラスタ(spoke)へデプロイできる。
+One Argo CD (the hub) can deploy to several clusters (the spokes).
 
-- 宛先クラスタの登録は「`argocd.argoproj.io/secret-type: cluster` ラベル付き Secret」
-  (名前・API サーバの URL・認証情報)。このラボでは `hub/clusters.yaml`(テンプレート)に
-  `scripts/04-spokes.sh` が動的な値と秘密を埋めて apply している
-- Application の `destination.name` がこの登録名を参照して解決される
-- どの Application がどのクラスタ×namespace へ行けるかは AppProject が制限する([03-argocd-crds.md](03-argocd-crds.md))
+- A destination cluster is registered as a Secret with the label `argocd.argoproj.io/secret-type: cluster`. In this lab, `scripts/04-spokes.sh` fills the dynamic values and the secret into `hub/clusters.yaml` (the template) and applies it
+- `destination.name` of an Application refers to this registered name and is resolved through it
+- AppProject restricts which Application may go to which cluster x namespace ([03-argocd-crds.md](03-argocd-crds.md))
 
-なお hub / spoke は一般的なトポロジー用語(車輪のハブとスポーク)で、ArgoCD 公式の用語では
-単に cluster / destination と呼ぶ。
+Note that hub / spoke are general topology terms (the hub and spokes of a wheel). Argo CD's official terminology simply says cluster / destination.
 
-## 守備範囲 — K8s 以外もデプロイできるのか
+## Scope: can it deploy things other than K8s
 
-ArgoCD の destination は常に K8s クラスタで、sync の実体は K8s リソースの apply。
-Cloud Run や Lambda のような非 K8s リソースへ**直接**はデプロイできない。
+The destination of Argo CD is always a K8s cluster, and what a sync actually does is apply K8s resources.
+It cannot deploy **directly** to non-K8s resources such as Cloud Run or Lambda.
 
-ただし「外部リソースを K8s のカスタムリソースとして表現するオペレータ」を挟むと管轄を広げられる:
+However, putting an operator in between, one that represents external resources as K8s custom resources, widens what it governs:
 
 ```
-ArgoCD ──sync──▶ K8s API 上の CR ──オペレータが reconcile──▶ 外部の実リソース
+Argo CD ──sync──▶ CR on the K8s API ──the operator reconciles──▶ the real external resource
 ```
 
-- Config Connector(GCP。例: `RunService` CR → 実 Cloud Run)
-- Crossplane(マルチクラウド)/ ACK(AWS)
-- ESO もこの同一パターン(ExternalSecret CR → 外部ストアの値)
+- Config Connector (GCP. Example: `RunService` CR -> a real Cloud Run service)
+- Crossplane (multi-cloud) / ACK (AWS)
+- ESO is the same pattern (ExternalSecret CR -> the value in an external store)
 
-正確に言えば「ArgoCD の管轄は *K8s API に置ける宣言* まで。宣言を外界に反映するのはオペレータの仕事」。
+To be precise: Argo CD governs *declarations that can be placed on the K8s API*, and no further. Reflecting a declaration in the outside world is the operator's job.
 
-## このラボとの対応
+## How it maps to this lab
 
-| 概念 | ラボの実物 |
+| Concept | The real thing in the lab |
 |---|---|
-| ArgoCD 本体 | `hub/argocd/`(chart を kustomize で展開) |
-| クラスタ登録 Secret | `hub/clusters.yaml`(テンプレート)に `scripts/04-spokes.sh` が値を埋めて apply |
-| Application の量産 | `hub/applicationset.yaml` + マーカー |
-| 手書き Application | `hub/platform.yaml`(gitea / vault を hub 自身 = in-cluster へ) |
-| 区画(認可) | `hub/appproject.yaml`(demo)+ `hub/platform.yaml`(platform) |
-| 宛先クラスタ側の権限 | `spoke/rbac.yaml` |
+| Argo CD itself | `hub/argocd/` (the chart rendered with kustomize) |
+| Cluster registration Secret | `scripts/04-spokes.sh` fills values into `hub/clusters.yaml` (the template) and applies it |
+| Mass production of Applications | `hub/applicationset.yaml` + markers |
+| Hand-written Applications | `hub/platform.yaml` (gitea / vault to the hub itself = in-cluster) |
+| Boundaries (authorization) | `hub/appproject.yaml` (demo) + `hub/platform.yaml` (platform) |
+| Permissions on the destination clusters | `spoke/rbac.yaml` |

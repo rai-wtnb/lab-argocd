@@ -1,34 +1,34 @@
-# ESO: External Secrets Operator とは
+# ESO: what External Secrets Operator is
 
-## 解きたい問題: Secret は GitOps に素直に乗らない
+## The problem: Secrets do not fit GitOps naturally
 
-GitOps は「すべてを Git に書く」が原則だが、Secret の値だけは Git に置けない
-(平文コミットは論外、リポジトリ閲覧権限=秘密閲覧権限になってしまう)。主な解決策は 2 系統:
+The principle of GitOps is to write everything in Git, but the value of a Secret is the one thing that cannot go there
+(a plaintext commit is out of the question, and read access to the repository would equal read access to the secrets). There are two main families of solutions:
 
-| 方式 | 代表 | 考え方 |
+| Approach | Examples | Idea |
 |---|---|---|
-| 暗号化して Git に置く | Sealed Secrets, SOPS | 値そのものを暗号文にしてコミットする |
-| **値は外部に置き、Git には参照だけ置く** | **ESO** | 外部シークレットストアを正本にする |
+| Encrypt and keep in Git | Sealed Secrets, SOPS | Commit the value itself as ciphertext |
+| **Keep the value outside, keep only a reference in Git** | **ESO** | Make an external secret store the source of truth |
 
-ESO は後者。クラウドのシークレット管理サービス(GCP Secret Manager / AWS Secrets Manager /
-Vault など)を正本とし、**そこから値を取って K8s Secret を生成・更新し続けるオペレータ**。
+ESO is the latter. It treats a cloud secret management service (GCP Secret Manager / AWS Secrets Manager /
+Vault and so on) as the source of truth, and is **an operator that keeps fetching values from there and generating / updating K8s Secrets**.
 
 ```mermaid
 flowchart LR
-    V[外部ストア<br>Vault / Secret Manager] -->|refreshInterval ごとに取得| ESO[ESO controller]
-    G[Git: ExternalSecret<br>何をどこから取るかの宣言] -->|GitOps で配布| ESO
-    ESO -->|生成・更新| S[K8s Secret]
-    S --> P[Pod が参照]
+    V[External store<br>Vault / Secret Manager] -->|fetched every refreshInterval| ESO[ESO controller]
+    G[Git: ExternalSecret<br>declares what to fetch from where] -->|shipped through GitOps| ESO
+    ESO -->|generates / updates| S[K8s Secret]
+    S --> P[Pods reference it]
 ```
 
-Git に入るのは「宣言」だけ、値は外部ストアだけに存在する — GitOps の原則と秘密管理が両立する。
+Only the declaration goes into Git, and the value exists only in the external store. The GitOps principle and secret management coexist.
 
-## CRD は実質 2 種類
+## There are effectively two CRDs
 
-**SecretStore / ClusterSecretStore** — 外部ストアへの「接続と認証」の定義。
+**SecretStore / ClusterSecretStore**: the definition of "connection and auth" to the external store.
 
 ```yaml
-# このラボの seed-repo/app/secrets/overlay/dev/demo-secrets/secretstore.yaml
+# seed-repo/app/secrets/overlay/dev/demo-secrets/secretstore.yaml in this lab
 spec:
   provider:
     vault:
@@ -39,68 +39,68 @@ spec:
         tokenSecretRef: {name: vault-token, key: token}
 ```
 
-- namespace スコープが SecretStore、クラスタ共通が ClusterSecretStore
-- provider はストアの種類ごと(vault / gcpsm / aws / fake など多数)
-- 認証はラボでは token(本番はクラウド IAM 連携にして秘密レスにするのが定石)
+- SecretStore is namespace-scoped, ClusterSecretStore is shared across the cluster
+- There is a provider per kind of store (vault / gcpsm / aws / fake and many more)
+- Auth is a token in the lab (in production the norm is cloud IAM integration, which makes it secretless)
 
-**ExternalSecret** — 「どのキーの値を、どの K8s Secret に写すか」の宣言。
+**ExternalSecret**: the declaration of which key's value to copy into which K8s Secret.
 
 ```yaml
-# 同 externalsecret.yaml
+# externalsecret.yaml in the same directory
 spec:
-  refreshInterval: 15s          # この間隔で外部ストアを見に行き、変化を反映する
+  refreshInterval: 15s          # checks the external store at this interval and reflects changes
   secretStoreRef: {kind: SecretStore, name: vault}
   target:
-    name: demo-app-secret       # 生成される K8s Secret 名
-    creationPolicy: Owner       # ESO が Secret のオーナー (消えたら作り直す)
+    name: demo-app-secret       # name of the K8s Secret that gets generated
+    creationPolicy: Owner       # ESO owns the Secret (recreates it if it disappears)
   data:
-    - secretKey: message        # Secret 側のキー
+    - secretKey: message        # key on the Secret side
       remoteRef:
-        key: demo-app           # 外部ストア側のキー
+        key: demo-app           # key on the external store side
         property: message
 ```
 
-## helm チャートと導入されるコンポーネント
+## The helm chart and the components it installs
 
-chart は [external-secrets](https://artifacthub.io/packages/helm/external-secrets-operator/external-secrets)
-(リポジトリ: `https://charts.external-secrets.io`)。このラボでは `scripts/06-eso.sh` が
-spoke-dev へ導入する。ArgoCD 本体と同じく「1 つの chart で controller 一式が入る」構成で、
-中身は 3 つの Deployment に分かれている:
+The chart is [external-secrets](https://artifacthub.io/packages/helm/external-secrets-operator/external-secrets)
+(repository: `https://charts.external-secrets.io`). In this lab `scripts/06-eso.sh` installs it
+on spoke-dev. Like Argo CD itself, one chart brings in the whole set of controllers, and
+it is split into three Deployments:
 
-| コンポーネント | 役割 |
+| Component | Role |
 |---|---|
-| external-secrets(core controller) | 本体。SecretStore / ExternalSecret を reconcile し、外部ストアから値を取って K8s Secret を生成・更新する |
-| external-secrets-webhook | admission/conversion webhook。ExternalSecret / SecretStore の**検証**と、CRD バージョン間の**変換**を担う |
-| external-secrets-cert-controller | webhook 用の TLS 証明書を生成し、CA bundle を CRD と ValidatingWebhookConfiguration に注入し続ける(webhook は TLS 必須のため) |
+| external-secrets (core controller) | The core. Reconciles SecretStore / ExternalSecret, fetches values from the external store and generates / updates K8s Secrets |
+| external-secrets-webhook | Admission/conversion webhook. Handles **validation** of ExternalSecret / SecretStore and **conversion** between CRD versions |
+| external-secrets-cert-controller | Generates the TLS certificate for the webhook and keeps injecting the CA bundle into the CRDs and the ValidatingWebhookConfiguration (a webhook requires TLS) |
 
-なお ArgoCD 本体の chart はバージョンを pin している(`hub/argocd/kustomization.yaml` の 9.7.0)のに対し、
-ESO は pin せず最新を入れる割り切り。本番では ESO も pin + Renovate 等での計画的更新が定石。
+Note that while the chart of Argo CD itself is pinned (10.18.0 in `hub/argocd/kustomization.yaml`),
+ESO is deliberately not pinned and installs the latest. In production the norm is to pin ESO too and update it on a plan with Renovate or similar.
 
-values はすべて chart 既定のまま(ArgoCD と違いラボ都合のカスタムが不要なため)。
-把握しておく価値のある既定値(uninstall で CRD ごと消える件、IAM 連携の入口、監視範囲など)は
-`spoke/eso-values.yaml` にコメントで抜粋している。
+The values are all chart defaults (unlike Argo CD, the lab needs no customization).
+The defaults worth knowing (uninstall removes the CRDs too, the entry point for IAM integration, the watch scope and so on) are
+collected as comments in `spoke/eso-values.yaml`.
 
-## 運用上の性質
+## Operational properties
 
-- **ローテーションが「値の差し替えだけ」になる**: 外部ストアの値を更新すれば、
-  refreshInterval 後に K8s Secret が追随する。マニフェストも Pod 定義も触らない
-  (ラボでは `make rotate MSG=...` で体感できる)
-- **ExternalSecret 自体は普通のマニフェスト**なので、ArgoCD で配れる。
-  このラボでは 2 個目のマーカーアプリ(`make marker-secrets`)として配っている
-- ArgoCD との相性で 1 つ既知の癖: ExternalSecret は CRD スキーマの既定値が live 側に
-  補完されるため、ArgoCD の diff が**恒常 OutOfSync** と誤判定することがある。
-  Application の annotation `argocd.argoproj.io/compare-options: ServerSideDiff=true`
-  (diff の予測を kube-apiserver の dry-run に任せる)で解消する
+- **Rotation becomes "just swap the value"**: update the value in the external store and the K8s Secret
+  follows after refreshInterval. Neither the manifests nor the Pod definitions are touched
+  (try it in the lab with `mise rotate ...`)
+- **An ExternalSecret is an ordinary manifest**, so Argo CD can ship it.
+  This lab ships it as a second marker app (`mise marker-secrets`)
+- One known quirk with Argo CD: defaults from the CRD schema are filled in on the live side of an
+  ExternalSecret, so Argo CD's diff can wrongly report it as **permanently OutOfSync**.
+  The Application annotation `argocd.argoproj.io/compare-options: ServerSideDiff=true`
+  (lets a dry-run on kube-apiserver predict the diff) resolves it
 
-## ラボでの一連の流れ
+## The whole flow in the lab
 
 ```bash
-# Vault(外部ストア) + ESO + 認証 token は make up で導入済み (単体再実行: make eso-up)
-# なお Vault 自体も手書き Application `vault` (hub/platform.yaml) として GitOps 管理されている
-make marker-secrets  # ExternalSecret を GitOps で配布
+# Vault (the external store) + ESO + the auth token are already installed by mise cluster-up (re-run on its own: mise eso-up)
+# Vault itself is also managed through GitOps as the hand-written Application `vault` (hub/platform.yaml)
+mise marker-secrets  # ship the ExternalSecret through GitOps
 kubectl --context kind-demo-dev -n demo-app get secret demo-app-secret \
   -o jsonpath='{.data.message}' | base64 -d
-make rotate MSG=v2   # 正本を更新 → 15 秒後に Secret が追随
+mise rotate v2 # update the source of truth -> the Secret follows 15 seconds later
 ```
 
-このとき Git のどこにも `s3cr3t...` という値が現れていないことを確認すると、ESO の存在意義が腹落ちする。
+Confirming that the value `s3cr3t...` appears nowhere in Git at this point makes the reason ESO exists sink in.

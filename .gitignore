@@ -1,4 +1,4 @@
 .work/
-# kustomize --enable-helm が helm pull したチャートのキャッシュ (レンダリング時に自動生成)
+# Cache of the chart that kustomize --enable-helm pulled with helm (generated when rendering)
 hub/argocd/charts/
 .DS_Store
